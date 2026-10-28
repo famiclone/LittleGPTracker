@@ -98,6 +98,10 @@ SampleInstrument::SampleInstrument() {
 	 slices_=new Variable("slices",SIP_SLICES,1) ;
 	 Insert(slices_) ;
 
+	 sliceToEnd_ =
+	     new Variable("slicetoend", SIP_SLICETOEND, sliceToEndTypes, 2, 0);
+	 Insert(sliceToEnd_);
+
 	 loopStart_=new WatchedVariable("loopstart",SIP_LOOPSTART,0) ;
 	 Insert(loopStart_) ;
 	 loopStart_->AddObserver(*this) ;
@@ -199,6 +203,7 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 		 return false ;
 	 } ;
 	 rp->channelCount_=source_->GetChannelCount(rp->midiNote_) ;
+	 rp->sampleSize_=source_->GetSize(rp->midiNote_) ;
 
 	 int rootNote=(rootNote_->GetInt()-60)+source_->GetRootNote(rp->midiNote_) ;
 
@@ -233,11 +238,42 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 
      float driverRate = float(Audio::GetInstance()->GetSampleRate());
      int isSliced = slices_->GetInt() > 1;
+     rp->sliceToEnd_ = false;
      if (isSliced) {
 		 if (rp->midiNote_ > slices_->GetInt() - 1) return false; // No sound outside of slice range
-		 int slice = rp->rendLoopEnd_ / slices_->GetInt();
+		 if (rp->sampleSize_ < 1) {
+			 return false;
+		 }
+		 // Slice over the configured loop end (same domain as the waveform UI),
+		 // but never past the actual PCM buffer.
+		 int domainEnd = rp->rendLoopEnd_;
+		 if (domainEnd > rp->sampleSize_) {
+			 domainEnd = rp->sampleSize_;
+		 }
+		 if (domainEnd < 1) {
+			 domainEnd = rp->sampleSize_;
+		 }
+		 int slice = domainEnd / slices_->GetInt();
+		 if (slice < 1) {
+			 slice = 1;
+		 }
 		 rp->rendLoopStart_ = rp->midiNote_ * slice;
-		 rp->rendLoopEnd_ = (rp->midiNote_ + 1) * slice;
+		 // Default: gate at next slice. "to end" plays through the remainder
+		 // of the sample as a oneshot (see Render — no loop wrap).
+		 if (sliceToEnd_->GetInt()) {
+			 rp->sliceToEnd_ = true;
+			 rp->rendLoopEnd_ = rp->sampleSize_;
+		 } else {
+			 rp->rendLoopEnd_ = (rp->midiNote_ + 1) * slice;
+			 if (rp->rendLoopEnd_ > rp->sampleSize_) {
+				 rp->rendLoopEnd_ = rp->sampleSize_;
+			 }
+		 }
+		 if (rp->rendLoopStart_ >= rp->rendLoopEnd_) {
+			 rp->rendLoopStart_ =
+			     rp->sampleSize_ > 1 ? rp->sampleSize_ - 1 : 0;
+			 rp->rendLoopEnd_ = rp->sampleSize_;
+		 }
 	 }
 
 	 switch (loopmode) {
@@ -355,6 +391,15 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 
 		rp->cutoff_=rp->baseFCut_=fl2fp(cutoff_->GetInt()/255.0f); 
 		rp->reso_=rp->baseFRes_=fl2fp(reso_->GetInt()/255.0f) ;
+
+		// Reset voice filter state — long "to end" notes + high reso can
+		// leave height/speed unbounded and start crackling mid-session.
+		{
+			filter_t *flt = get_filter(channel);
+			flt->height[0] = flt->height[1] = 0;
+			flt->speed[0] = flt->speed[1] = 0;
+			flt->hipdelay[0] = flt->hipdelay[1] = 0;
+		}
 
 	// Init crush params
 
@@ -551,9 +596,12 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 		 int downsmpl=rp->downsample_ ;
 		 unsigned int dsMask=0xFFFFFFFF<<downsmpl ;
 
-		 // Loop mode
-
+		 // Loop mode. Sliced "to end" always finishes at sample end — wrapping
+		 // from the tail back to a mid-sample slice start is a hard click train.
 		 SampleInstrumentLoopMode loopMode=(SampleInstrumentLoopMode)loopMode_->GetInt() ;
+		 if (rp->sliceToEnd_) {
+			 loopMode = SILM_ONESHOT ;
+		 }
 
 		 // Interpolation
 
@@ -610,7 +658,14 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
     {
 			lastSample=(short *)(wavbuf+rp->rendLoopEnd_*2*channelCount) ;
 		}
-        
+	// One-past-last allocated PCM frame — linear interp must not read past
+	// the buffer (use sample size, not loop end: reverse can have end < start).
+	int pcmFrames = rp->sampleSize_ > 0 ? rp->sampleSize_ : rp->rendLoopEnd_;
+	if (pcmFrames < 1) {
+		pcmFrames = 1;
+	}
+	short *waveEnd = (short *)(wavbuf + pcmFrames * 2 * channelCount);
+
     fixed zerofive=fl2fp(0.5f) ;
 
 		// Get feedback pointer position & boundary
@@ -829,6 +884,14 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
         }
 
         short *i2=i1+channelCount ;
+		// Clamp neighbour tap so we never read past the rendered region /
+		// PCM buffer (fast pitches can step onto the last frame with i2 OOB).
+		if (i2 >= waveEnd) {
+			i2 = waveEnd - channelCount ;
+			if (i2 < (short *)wavbuf) {
+				i2 = (short *)wavbuf ;
+			}
+		}
 
 				if (filtering) 
         {
@@ -921,7 +984,7 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 						if (filterBoost) {
 							if (*fltSpeedPtr<-FP_ONE) {
 								*fltSpeedPtr=-f_s ;
-							} else if (fltSpeed[i]>FP_ONE) {
+							} else if (*fltSpeedPtr>FP_ONE) {
 								*fltSpeedPtr=f_s ;
 							};
 							*fltSpeedPtr=fp_mul(*fltSpeedPtr,fltDirt) ;
@@ -932,6 +995,23 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 
 						*fltHeightPtr += *fltSpeedPtr ;
 						*fltHeightPtr += *fltDelayPtr-hpin ;
+
+						// Hard cap — with long sliced "to end" notes, unbounded
+						// reso feedback overflows fixed and turns into crackle.
+						{
+							const fixed lim = i2fp(32768);
+							if (*fltSpeedPtr > FP_ONE) {
+								*fltSpeedPtr = FP_ONE;
+							} else if (*fltSpeedPtr < -FP_ONE) {
+								*fltSpeedPtr = -FP_ONE;
+							}
+							if (*fltHeightPtr > lim) {
+								*fltHeightPtr = lim;
+							} else if (*fltHeightPtr < -lim) {
+								*fltHeightPtr = -lim;
+							}
+						}
+
 						s2=*fltHeightPtr ;
 
 						*fltDelayPtr=hpin ;

@@ -120,6 +120,33 @@ void InstrumentView::applyTypeChangeIfNeeded() {
 	isDirty_ = true;
 }
 
+void InstrumentView::applySlicesUiIfNeeded() {
+	if (getInstrumentType() != IT_SAMPLE || !current_) {
+		return;
+	}
+	Variable *slices = current_->FindVariable(SIP_SLICES);
+	if (!slices) {
+		return;
+	}
+	bool want = slices->GetInt() > 1;
+	bool have = false;
+	IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator());
+	for (it->Begin(); !it->IsDone(); it->Next()) {
+		UIField &raw = it->CurrentItem();
+		if (raw.IsStatic()) {
+			continue;
+		}
+		if (((UIIntVarField &)raw).GetVariableID() == SIP_SLICETOEND) {
+			have = true;
+			break;
+		}
+	}
+	if (want != have) {
+		onInstrumentChange();
+		isDirty_ = true;
+	}
+}
+
 void InstrumentView::addTypeField(GUIPoint &position) {
 	UIIntVarField *f1 =
 	    new UIIntVarField(position, *typeVar_, "type: %s", 0, 1, 1, 1);
@@ -261,6 +288,13 @@ void InstrumentView::fillSampleParameters() {
 	v=instrument->FindVariable(SIP_SLICES) ;
 	f1=new UIIntVarField(position,*v,"slices: %2.2X",1,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
+
+	if (v->GetInt() > 1) {
+		position._y+=1 ;
+		v=instrument->FindVariable(SIP_SLICETOEND) ;
+		f1=new UIIntVarField(position,*v,"to end: %s",0,1,1,1) ;
+		T_SimpleList<UIField>::Insert(f1) ;
+	}
 
 	int sampleEnd = instrument->GetSampleSize() - 1;
 	if (sampleEnd < 0) {
@@ -493,9 +527,10 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 
 	FieldView::ProcessButtonMask(mask) ;
 
-	// Re-type only after the field ProcessArrow has returned; rebuilding
-	// inside a WatchedVariable notify would delete the active UIField.
+	// Re-type / rebuild only after the field ProcessArrow has returned;
+	// rebuilding inside a WatchedVariable notify would delete the active UIField.
 	applyTypeChangeIfNeeded();
+	applySlicesUiIfNeeded();
 
     Player *player=Player::GetInstance() ;
 	// B Modifier

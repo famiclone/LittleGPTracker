@@ -9,6 +9,8 @@ char *interpolationTypes[] = {
 	"none"
 } ;
 
+char *sliceToEndTypes[] = {"off", "on"};
+
 char *filterMode[] = {
 	"original",
   "bassy",

@@ -66,6 +66,7 @@ class SynthInstrument : public I_Instrument {
         float baseInc_; // cycles/sample at note pitch (no FX)
         float curInc_;  // after pitch FX
         float lfoPhase_;
+        float pitchMod_; // LFO pitch factor, refreshed at k-rate
         int note_;
         int lastNote_;
         unsigned int noise_;

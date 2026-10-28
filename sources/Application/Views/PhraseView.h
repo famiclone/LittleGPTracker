@@ -89,6 +89,7 @@ class PhraseView : public View {
     int overlayDrawnDomain_;
     int overlayDrawnSlices_;
     int overlayDrawnSlice_;
+    bool overlayDrawnSliceToEnd_;
     int stickyPlayingSlice_;
     int overlayDrawnSynthKey_;
     signed char synthWaveBin_[kWaveBins];

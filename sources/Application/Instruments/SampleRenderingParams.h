@@ -16,6 +16,7 @@ struct renderParams {
 
 	void *sampleBuffer_ ; // wavdata
 	int channelCount_ ;
+	int sampleSize_ ; // PCM frames in sampleBuffer_
 
 	int krateCount_ ;   // K-rate counter
     float position_;    // Position in the sample stream
@@ -35,9 +36,12 @@ struct renderParams {
 	int retrigOffset_ ; // offset in ticks after retrig
     int printFx_;       // Impulse response-based printable reverb
 
-    bool finished_; // the instrument has cut off
+	bool finished_; // the instrument has cut off
+	// Sliced "to end": play from slice start through sample end as oneshot
+	// (do not wrap — looping mid-sample → end sounds like crackle).
+	bool sliceToEnd_;
 
-    fixed baseFCut_;
+	fixed baseFCut_;
     fixed baseFRes_ ;
 
 	fixed cutoff_ ; // filter cutoff

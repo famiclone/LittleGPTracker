@@ -27,6 +27,7 @@ protected:
 	void fillSynthParameters() ;
 	void addTypeField(GUIPoint &position) ;
 	void applyTypeChangeIfNeeded() ;
+	void applySlicesUiIfNeeded() ;
 	InstrumentType getInstrumentType() ;
 	void Update(Observable &o,I_ObservableData *d) ;
 

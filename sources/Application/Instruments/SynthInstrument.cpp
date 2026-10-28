@@ -67,6 +67,7 @@ SynthInstrument::SynthInstrument() {
         v.baseInc_ = 0.0f;
         v.curInc_ = 0.0f;
         v.lfoPhase_ = 0.0f;
+        v.pitchMod_ = 1.0f;
         v.note_ = 0;
         v.lastNote_ = -1;
         v.noise_ = 0xACE1u + (unsigned)i * 97u;
@@ -197,6 +198,7 @@ bool SynthInstrument::Start(int channel, unsigned char note, int flags) {
     v.note_ = note;
     v.phase_ = 0.0f;
     v.lfoPhase_ = 0.0f;
+    v.pitchMod_ = 1.0f;
     v.baseInc_ = freq / driverRate;
     v.curInc_ = v.baseInc_;
     v.baseVol_ = (float)volume_->GetInt();
@@ -413,6 +415,10 @@ bool SynthInstrument::Render(int channel, fixed *buffer, int size, int flags) {
     const float pcmScale = 8191.0f;
     SYS_MEMSET(buffer, 0, size * 2 * sizeof(fixed));
 
+    // Advance LFO/pitch at k-rate — per-sample sin()+pow() with a long
+    // sliced sample + synth session was starving the audio callback.
+    float lfoBlock = lfoInc * (float)SYNTH_KRATE_SAMPLE_COUNT;
+
     for (int i = 0; i < size; i++) {
         if (--v.krateCount_ <= 0) {
             v.krateCount_ = SYNTH_KRATE_SAMPLE_COUNT;
@@ -423,6 +429,17 @@ bool SynthInstrument::Render(int channel, fixed *buffer, int size, int flags) {
                     (*it)->Trigger(false);
                 }
                 applyUpdaters(v);
+            }
+            v.lfoPhase_ += lfoBlock;
+            if (v.lfoPhase_ >= 1.0f) {
+                v.lfoPhase_ -= (float)floor(v.lfoPhase_);
+            }
+            if (lfoDepthSemis > 0.0f) {
+                float lfo = (float)sin(v.lfoPhase_ * 2.0 * M_PI);
+                v.pitchMod_ =
+                    (float)pow(2.0, (lfo * lfoDepthSemis) / 12.0);
+            } else {
+                v.pitchMod_ = 1.0f;
             }
         }
 
@@ -461,20 +478,11 @@ bool SynthInstrument::Render(int channel, fixed *buffer, int size, int flags) {
             break;
         }
 
-        float lfo = (float)sin(v.lfoPhase_ * 2.0 * M_PI);
-        v.lfoPhase_ += lfoInc;
-        if (v.lfoPhase_ >= 1.0f) {
-            v.lfoPhase_ -= 1.0f;
-        }
-
-        float pitchMod = 1.0f;
-        if (lfoDepthSemis > 0.0f) {
-            pitchMod = (float)pow(2.0, (lfo * lfoDepthSemis) / 12.0);
-        }
-
         float s = sampleWave(wave, v.phase_, v.noise_) * v.env_;
-        v.phase_ += v.curInc_ * pitchMod;
+        v.phase_ += v.curInc_ * v.pitchMod_;
         if (v.phase_ >= 1.0f) {
+            v.phase_ -= (float)floor(v.phase_);
+        } else if (v.phase_ < 0.0f) {
             v.phase_ -= (float)floor(v.phase_);
         }
 

@@ -50,6 +50,7 @@ PhraseView::PhraseView(GUIWindow &w, ViewData *viewData)
     overlayDrawnDomain_ = -1;
     overlayDrawnSlices_ = -1;
     overlayDrawnSlice_ = -2;
+    overlayDrawnSliceToEnd_ = false;
     stickyPlayingSlice_ = -1;
     overlayDrawnSynthKey_ = 0;
     memset(synthWaveBin_, 0, sizeof(synthWaveBin_));
@@ -1367,6 +1368,8 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
     if (nSlices < 1) {
         nSlices = 1;
     }
+    Variable *toEndVar = si->FindVariable(SIP_SLICETOEND);
+    bool sliceToEnd = (nSlices > 1) && toEndVar && toEndVar->GetInt() != 0;
 
     int playingSlice = resolvePlayingSlice(instrId, instr, nSlices);
 
@@ -1375,7 +1378,8 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
     // pixels when the visible strip state is unchanged.
     if (overlayValid_ && overlayDrawnSample_ == sampleIdx &&
         overlayDrawnDomain_ == domain && overlayDrawnSlices_ == nSlices &&
-        overlayDrawnSlice_ == playingSlice && overlayDrawnSynthKey_ == 0) {
+        overlayDrawnSlice_ == playingSlice &&
+        overlayDrawnSliceToEnd_ == sliceToEnd && overlayDrawnSynthKey_ == 0) {
         return;
     }
 
@@ -1392,9 +1396,12 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
     aw.FillRect(rightRail, CD_BORDER);
 
     // Active slice fill — use PLAY so it stays visible under the waveform.
+    // With "to end", highlight from the triggered slice through sample end.
     if (playingSlice >= 0) {
         int x0 = px + (int)((long)playingSlice * pw / nSlices);
-        int x1 = px + (int)((long)(playingSlice + 1) * pw / nSlices);
+        int x1 = sliceToEnd
+                     ? px + pw
+                     : px + (int)((long)(playingSlice + 1) * pw / nSlices);
         if (x1 <= x0) {
             x1 = x0 + 1;
         }
@@ -1423,8 +1430,11 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
             continue;
         }
         int sliceOfBin = (nSlices > 1) ? (b * nSlices) / kWaveBins : -1;
-        ColorDefinition col =
-            (sliceOfBin == playingSlice) ? CD_PLAY : CD_HILITE1;
+        bool inPlaying =
+            (playingSlice >= 0) &&
+            (sliceToEnd ? (sliceOfBin >= playingSlice)
+                        : (sliceOfBin == playingSlice));
+        ColorDefinition col = inPlaying ? CD_PLAY : CD_HILITE1;
         GUIRect column(x0, midY - amp, x1, midY + amp + 1);
         aw.FillRect(column, col);
     }
@@ -1445,6 +1455,7 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
     overlayDrawnDomain_ = domain;
     overlayDrawnSlices_ = nSlices;
     overlayDrawnSlice_ = playingSlice;
+    overlayDrawnSliceToEnd_ = sliceToEnd;
     overlayDrawnSynthKey_ = 0;
 }
 
@@ -1587,6 +1598,7 @@ void PhraseView::drawSynthOverlay(int px, int py, int pw, int ph,
     overlayDrawnDomain_ = -1;
     overlayDrawnSlices_ = -1;
     overlayDrawnSlice_ = -2;
+    overlayDrawnSliceToEnd_ = false;
     overlayDrawnSynthKey_ = key;
 }
 
