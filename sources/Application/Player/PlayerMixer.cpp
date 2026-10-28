@@ -5,6 +5,7 @@
 #include "Application/Utils/fixed.h"
 #include "Services/Midi/MidiService.h"
 #include "SyncMaster.h"
+#include "TablePlayback.h"
 #include "System/Console/Trace.h"
 #include "System/System/System.h"
 #include <math.h>
@@ -127,6 +128,33 @@ void PlayerMixer::StartInstrument(int channel,I_Instrument *instrument,unsigned 
 void PlayerMixer::StopInstrument(int channel) {
     channel_[channel]->StopInstrument() ;
     notes_[channel]=0xFF ;
+}
+
+void PlayerMixer::DetachInstrumentLocked(I_Instrument *instrument) {
+	if (!instrument) {
+		return;
+	}
+	for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+		if (channel_[i]->GetInstrument() == instrument) {
+			StopInstrument(i);
+		}
+		if (lastInstrument_[i] == instrument) {
+			lastInstrument_[i] = 0;
+		}
+		TablePlayback &tp = TablePlayback::GetTablePlayback(i);
+		if (tp.GetInstrument() == instrument) {
+			tp.Stop();
+		}
+	}
+}
+
+void PlayerMixer::DetachInstrument(I_Instrument *instrument) {
+	if (!instrument) {
+		return;
+	}
+	Lock();
+	DetachInstrumentLocked(instrument);
+	Unlock();
 }
 
 I_Instrument *PlayerMixer::GetInstrument(int channel) {

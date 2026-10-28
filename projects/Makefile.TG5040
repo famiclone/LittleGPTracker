@@ -1,14 +1,19 @@
--include $(PWD)/rules_base
+# PROJECTDIR is the projects/ directory (exported by the top Makefile).
+PROJECTDIR ?= $(CURDIR)
+-include $(PROJECTDIR)/rules_base
 
 #---------------------------------------------------------------------------------
 # TrimUI Brick / Smart Pro (Allwinner A133p, "tg5040") running NextUI.
 #
-# Prefer the NextUI crosstool (x86_64 host) when available. On Apple Silicon,
-# set LGPT_TG5040_USE_CLANG=1 to build with clang against the same sysroot
-# (avoids qemu-user ICE in the x86_64 gcc binary).
-#
+# Native Linux x86_64 host (crosstool gcc):
 #   make PLATFORM=TG5040 DEVKIT=/path/to/aarch64-nextui-linux-gnu
-#   make PLATFORM=TG5040 DEVKIT=/path/to/aarch64-nextui-linux-gnu LGPT_TG5040_USE_CLANG=1
+#
+# Apple Silicon / Colima (recommended):
+#   export DOCKER_HOST=unix://$$HOME/.colima/default/docker.sock
+#   make brick
+#
+# Host-side clang against a local DEVKIT (needs aarch64-capable lld):
+#   make PLATFORM=TG5040 LGPT_TG5040_USE_CLANG=1 DEVKIT=...
 #---------------------------------------------------------------------------------
 
 DEFINES := \
@@ -23,15 +28,17 @@ DEFINES := \
 	-DSDLAUDIO \
 	-DDUMMYMIDI
 
-DEVKIT ?= /opt/tg5040-nextui-toolchain
+# Default matches tools/setup-toolchain.sh unpack location.
+DEVKIT ?= $(abspath $(PROJECTDIR)/../../toolchain/aarch64-nextui-linux-gnu)
 TRIPLET := aarch64-nextui-linux-gnu
 SYSROOT := $(DEVKIT)/$(TRIPLET)/libc
 
 ifeq ($(LGPT_TG5040_USE_CLANG),1)
 DEVKITARM := /usr
-CC    = clang
-CXX   = clang++
-STRIP = llvm-strip
+export CC    := clang
+export CXX   := clang++
+# Prefer host/container strip (binutils); crosstool strip is x86_64-only.
+STRIP ?= strip
 TOOLPATH = /usr/bin
 CXXINC := $(DEVKIT)/$(TRIPLET)/include/c++/8.3.0
 GCCLIB := $(DEVKIT)/lib/gcc/$(TRIPLET)/8.3.0
@@ -43,33 +50,38 @@ TARGET_FLAGS := --target=aarch64-linux-gnu --sysroot=$(SYSROOT) \
 SDL_CFLAGS := -D_REENTRANT -I$(SYSROOT)/usr/include/SDL2
 SDL_LIBS   := -lSDL2
 OPT_FLAGS = -O2 -march=armv8-a -fstack-protector-strong
-INCLUDES = -Iinclude $(SDL_CFLAGS) -I$(PWD)/../sources
-CFLAGS   := $(DEFINES) $(INCLUDES) $(OPT_FLAGS) $(TARGET_FLAGS) -Wall
-CXXFLAGS := $(CFLAGS) -std=gnu++03
-LDFLAGS  := $(TARGET_FLAGS) -fuse-ld=lld \
+INCLUDES = -Iinclude $(SDL_CFLAGS) -I$(PROJECTDIR)/../sources
+export CFLAGS   := $(DEFINES) $(INCLUDES) $(OPT_FLAGS) $(TARGET_FLAGS) -Wall
+export CXXFLAGS := $(CFLAGS) -std=gnu++03
+# lld is native on arm64 containers / Homebrew llvm; avoids x86_64 crosstool ld.
+export LDFLAGS  := $(TARGET_FLAGS) -fuse-ld=lld \
 	-L$(SYSROOT)/usr/lib \
 	-L$(DEVKIT)/$(TRIPLET)/lib64 \
 	-L$(GCCLIB) \
 	-Wl,-rpath-link,$(SYSROOT)/usr/lib
-LIBS     := $(SDL_LIBS) -lpthread -lstdc++ -lm -lc -lgcc_s -lgcc
+export LIBS     := $(SDL_LIBS) -lpthread -lstdc++ -lm -lc -lgcc_s -lgcc
+# Same as Makefile.macOS: adjustdepends breaks clang -MD output.
+define adjustdepends
+endef
 else
 CROSS_COMPILE := $(DEVKIT)/bin/$(TRIPLET)-
 DEVKITARM := $(DEVKIT)
-CC    = $(CROSS_COMPILE)gcc
-CXX   = $(CROSS_COMPILE)g++
+export CC    := $(CROSS_COMPILE)gcc
+export CXX   := $(CROSS_COMPILE)g++
 STRIP = $(CROSS_COMPILE)strip
 TOOLPATH = $(DEVKIT)/bin
 SDL_CFLAGS := -D_REENTRANT -I$(SYSROOT)/usr/include/SDL2
 SDL_LIBS   := -lSDL2
 OPT_FLAGS = -O3 -march=armv8-a+crypto+crc -fasynchronous-unwind-tables \
             -fstack-protector-strong -Wformat -Wformat-security
-INCLUDES = -Iinclude $(SDL_CFLAGS) -I$(PWD)/../sources
-CFLAGS   := $(DEFINES) $(INCLUDES) $(OPT_FLAGS) -Wall
-CXXFLAGS := $(CFLAGS) -std=gnu++03
-LIBS     := $(SDL_LIBS) -lpthread
+INCLUDES = -Iinclude $(SDL_CFLAGS) -I$(PROJECTDIR)/../sources
+export CFLAGS   := $(DEFINES) $(INCLUDES) $(OPT_FLAGS) -Wall
+export CXXFLAGS := $(CFLAGS) -std=gnu++03
+export LIBS     := $(SDL_LIBS) -lpthread
 endif
 
-OUTPUT    = ../lgpt-tg5040
+# Absolute path so the elf lands in the repo root from buildTG5040/.
+OUTPUT    = $(PROJECTDIR)/../lgpt-tg5040
 EXTENSION := elf
 
 %.elf: $(OFILES)

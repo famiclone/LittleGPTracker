@@ -57,6 +57,10 @@ class PhraseView : public View {
     void ensureWaveformCache(short *pcm, int domain, int nCh, int sampleIdx,
                              int nSlices);
     int resolvePlayingSlice(int instrId, I_Instrument *instr, int nSlices);
+    void drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
+                           I_Instrument *instr);
+    void drawSynthOverlay(int px, int py, int pw, int ph, I_Instrument *instr);
+    int synthPreviewKey(I_Instrument *instr) const;
 
   private:
     enum { kWaveBins = 48 };
@@ -86,6 +90,9 @@ class PhraseView : public View {
     int overlayDrawnSlices_;
     int overlayDrawnSlice_;
     int stickyPlayingSlice_;
+    int overlayDrawnSynthKey_;
+    signed char synthWaveBin_[kWaveBins];
+    signed char synthLfoBin_[kWaveBins];
     struct clipboard {
         bool active_;
         int col_;

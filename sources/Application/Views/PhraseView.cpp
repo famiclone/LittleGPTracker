@@ -3,6 +3,7 @@
 #include "Application/Instruments/CommandList.h"
 #include "Application/Instruments/SampleInstrument.h"
 #include "Application/Instruments/SamplePool.h"
+#include "Application/Instruments/SynthInstrument.h"
 #include "Application/Model/Scale.h"
 #include "Application/Model/Table.h"
 #include "Application/Player/PlayerMixer.h"
@@ -50,6 +51,9 @@ PhraseView::PhraseView(GUIWindow &w, ViewData *viewData)
     overlayDrawnSlices_ = -1;
     overlayDrawnSlice_ = -2;
     stickyPlayingSlice_ = -1;
+    overlayDrawnSynthKey_ = 0;
+    memset(synthWaveBin_, 0, sizeof(synthWaveBin_));
+    memset(synthLfoBin_, 0, sizeof(synthLfoBin_));
 
     clipboard_.active_ = false;
     clipboard_.width_ = 0;
@@ -1282,13 +1286,13 @@ int PhraseView::resolvePlayingSlice(int instrId, I_Instrument *instr,
 /*
  * Pixel waveform + slice markers/highlight. Domain matches the engine:
  * slices divide [0 .. loopEnd] (or full sample if loop end unset).
+ * Synth instruments show oscillator*ADSR with LFO as a thin white line.
  */
 void PhraseView::DrawOverlay() {
     if (miniLayout_) {
         return;
     }
 
-    AppWindow &aw = (AppWindow &)w_;
     GUIPoint anchor = GetAnchor();
 
     const int stripLeft = View::margin_ + 1;
@@ -1311,11 +1315,26 @@ void PhraseView::DrawOverlay() {
 
     InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
     I_Instrument *instr = bank->GetInstrument(instrId);
-    if (!instr || instr->GetType() != IT_SAMPLE) {
+    if (!instr) {
         overlayValid_ = false;
         return;
     }
 
+    if (instr->GetType() == IT_SAMPLE) {
+        drawSampleOverlay(px, py, pw, ph, instrId, instr);
+        return;
+    }
+    if (instr->GetType() == IT_SYNTH) {
+        drawSynthOverlay(px, py, pw, ph, instr);
+        return;
+    }
+
+    overlayValid_ = false;
+}
+
+void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
+                                   I_Instrument *instr) {
+    AppWindow &aw = (AppWindow &)w_;
     SampleInstrument *si = (SampleInstrument *)instr;
     int sampleIdx = si->GetSampleIndex();
     if (sampleIdx < 0 || sampleIdx == NO_SAMPLE) {
@@ -1356,7 +1375,7 @@ void PhraseView::DrawOverlay() {
     // pixels when the visible strip state is unchanged.
     if (overlayValid_ && overlayDrawnSample_ == sampleIdx &&
         overlayDrawnDomain_ == domain && overlayDrawnSlices_ == nSlices &&
-        overlayDrawnSlice_ == playingSlice) {
+        overlayDrawnSlice_ == playingSlice && overlayDrawnSynthKey_ == 0) {
         return;
     }
 
@@ -1426,6 +1445,149 @@ void PhraseView::DrawOverlay() {
     overlayDrawnDomain_ = domain;
     overlayDrawnSlices_ = nSlices;
     overlayDrawnSlice_ = playingSlice;
+    overlayDrawnSynthKey_ = 0;
+}
+
+int PhraseView::synthPreviewKey(I_Instrument *instr) const {
+    // Fingerprint of params that affect the strip so we can skip redraws.
+    int wave = 0, atk = 0, dec = 0, sus = 0, rel = 0, rate = 0, depth = 0;
+    Variable *v;
+    if ((v = instr->FindVariable(SYP_WAVEFORM)))
+        wave = v->GetInt();
+    if ((v = instr->FindVariable(SYP_ATTACK)))
+        atk = v->GetInt();
+    if ((v = instr->FindVariable(SYP_DECAY)))
+        dec = v->GetInt();
+    if ((v = instr->FindVariable(SYP_SUSTAIN)))
+        sus = v->GetInt();
+    if ((v = instr->FindVariable(SYP_RELEASE)))
+        rel = v->GetInt();
+    if ((v = instr->FindVariable(SYP_LFORATE)))
+        rate = v->GetInt();
+    if ((v = instr->FindVariable(SYP_LFODEPTH)))
+        depth = v->GetInt();
+    return (wave & 0x7) | ((atk & 0xFF) << 3) | ((dec & 0xFF) << 11) |
+           ((sus & 0xFF) << 19) | ((rel & 0x1F) << 27) | ((rate & 0xFF) << 8) |
+           ((depth & 0xFF) << 16);
+}
+
+void PhraseView::drawSynthOverlay(int px, int py, int pw, int ph,
+                                  I_Instrument *instr) {
+    AppWindow &aw = (AppWindow &)w_;
+    SynthInstrument *sy = (SynthInstrument *)instr;
+    int key = synthPreviewKey(instr);
+
+    if (overlayValid_ && overlayDrawnSynthKey_ == key &&
+        overlayDrawnSample_ == -2) {
+        return;
+    }
+
+    sy->FillPhrasePreview(synthWaveBin_, synthLfoBin_, kWaveBins);
+
+    GUIRect stripDirty(px - 2, py, px + pw + 2, py + ph);
+    aw.BeginBatchDraw();
+
+    aw.FillRect(stripDirty, CD_BACKGROUND);
+    GUIRect leftRail(px - 2, py, px, py + ph);
+    GUIRect rightRail(px + pw, py, px + pw + 2, py + ph);
+    aw.FillRect(leftRail, CD_BORDER);
+    aw.FillRect(rightRail, CD_BORDER);
+
+    const int midY = py + ph / 2;
+    const int maxAmp = ph / 2 - 1;
+    if (maxAmp < 1) {
+        aw.EndBatchDraw(stripDirty);
+        return;
+    }
+
+    // Center line
+    GUIRect mid(px, midY, px + pw, midY + 1);
+    aw.FillRect(mid, CD_BORDER);
+
+    // Oscillator * ADSR as bipolar columns.
+    for (int b = 0; b < kWaveBins; b++) {
+        int x0 = px + (int)((long)b * pw / kWaveBins);
+        int x1 = px + (int)((long)(b + 1) * pw / kWaveBins);
+        if (x1 <= x0) {
+            x1 = x0 + 1;
+        }
+        int amp = ((int)synthWaveBin_[b] * maxAmp) / 127;
+        if (amp == 0 && synthWaveBin_[b] != 0) {
+            amp = (synthWaveBin_[b] > 0) ? 1 : -1;
+        }
+        int y0 = midY;
+        int y1 = midY - amp;
+        if (y1 < y0) {
+            int tmp = y0;
+            y0 = y1;
+            y1 = tmp;
+        }
+        y1 += 1;
+        if (y0 < py)
+            y0 = py;
+        if (y1 > py + ph)
+            y1 = py + ph;
+        if (y1 <= y0) {
+            continue;
+        }
+        GUIRect column(x0, y0, x1, y1);
+        aw.FillRect(column, CD_HILITE1);
+    }
+
+    // LFO on top — thin near-white (FOREGROUND) 1px stroke.
+    int prevX = -1;
+    int prevY = -1;
+    for (int b = 0; b < kWaveBins; b++) {
+        int x = px + (int)((long)b * pw / kWaveBins) +
+                (int)((long)pw / (kWaveBins * 2));
+        int amp = ((int)synthLfoBin_[b] * maxAmp) / 127;
+        int y = midY - amp;
+        if (y < py)
+            y = py;
+        if (y >= py + ph)
+            y = py + ph - 1;
+        GUIRect dot(x, y, x + 1, y + 1);
+        aw.FillRect(dot, CD_NORMAL);
+        if (prevX >= 0) {
+            // Connect bins with a 1px Bresenham-ish fill so the stroke reads.
+            int x0 = prevX;
+            int y0 = prevY;
+            int x1 = x;
+            int y1 = y;
+            int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
+            int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
+            int sx = (x0 < x1) ? 1 : -1;
+            int sy = (y0 < y1) ? 1 : -1;
+            int err = dx - dy;
+            while (true) {
+                GUIRect p(x0, y0, x0 + 1, y0 + 1);
+                aw.FillRect(p, CD_NORMAL);
+                if (x0 == x1 && y0 == y1) {
+                    break;
+                }
+                int e2 = 2 * err;
+                if (e2 > -dy) {
+                    err -= dy;
+                    x0 += sx;
+                }
+                if (e2 < dx) {
+                    err += dx;
+                    y0 += sy;
+                }
+            }
+        }
+        prevX = x;
+        prevY = y;
+    }
+
+    aw.EndBatchDraw(stripDirty);
+
+    overlayValid_ = true;
+    overlayDrawnSample_ = -2; // synth marker (not a sample index)
+    overlayDrawnDomain_ = -1;
+    overlayDrawnSlices_ = -1;
+    overlayDrawnSlice_ = -2;
+    overlayDrawnSynthKey_ = key;
 }
 
 void PhraseView::processSelectionButtonMask(unsigned short mask) {

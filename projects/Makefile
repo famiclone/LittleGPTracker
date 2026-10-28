@@ -6,7 +6,10 @@
 
 PLATFORM:=  RASPI
 FONT := original.bmp
-include $(PWD)/Makefile.$(PLATFORM)
+# After `make -C buildXXX`, PWD/CURDIR become the build dir. Export the
+# projects/ path on the first pass so Makefile.$(PLATFORM) still resolves.
+export PROJECTDIR ?= $(CURDIR)
+include $(PROJECTDIR)/Makefile.$(PLATFORM)
 
 #---------------------------------------------------------------------------------
 # options for FXE
@@ -267,7 +270,7 @@ COMMONFILES := \
 	char.o n_assert.o fixed.o wildcard.o \
 	SyncMaster.o TablePlayback.o Player.o \
 	Table.o TableView.o\
-	InstrumentBank.o WavFileWriter.o WavFile.o MidiInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
+	InstrumentBank.o WavFileWriter.o WavFile.o MidiInstrument.o SynthInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
 	PersistencyService.o Persistent.o \
 	Observable.o SingletonRegistry.o \
 	Audio.o AudioMixer.o AudioOutDriver.o AudioDriver.o \
@@ -527,7 +530,7 @@ export INCLUDE := \
 					-I$(CURDIR)/$(BUILD)
 export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-.PHONY: $(BUILD) clean
+.PHONY: $(BUILD) clean brick
 
 #---------------------------------------------------------------------------------
 
@@ -541,6 +544,33 @@ $(BUILD):
 clean:
 	@echo clean ...
 	@rm -fr $(OUTPUT).$(EXTENSION) $(BUILD) *.elf *.gxb *.fxe *.gdb
+
+#---------------------------------------------------------------------------------
+# TrimUI Brick (TG5040): build inside Colima/Docker against volume lgpt-tc.
+#   export DOCKER_HOST=unix://$$HOME/.colima/default/docker.sock   # if needed
+#   make brick
+#---------------------------------------------------------------------------------
+TG5040_DOCKER_IMAGE  ?= debian:bookworm
+TG5040_DOCKER_DEVKIT ?= /opt/tg5040-nextui-toolchain
+TG5040_DOCKER_VOLUME ?= lgpt-tc
+
+brick:
+	docker run --rm --platform linux/arm64 \
+		-v $(TG5040_DOCKER_VOLUME):$(TG5040_DOCKER_DEVKIT) \
+		-v $(abspath $(PROJECTDIR)/..):/src \
+		-w /src/projects \
+		$(TG5040_DOCKER_IMAGE) \
+		bash -lc 'set -euo pipefail; \
+			apt-get update -qq; \
+			DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+				make python3 python3-pil clang lld binutils >/dev/null; \
+			make PLATFORM=TG5040 \
+				DEVKIT=$(TG5040_DOCKER_DEVKIT) \
+				LGPT_TG5040_USE_CLANG=1 \
+				STRIP=strip \
+				-j$$(nproc) \
+				buildTG5040; \
+			file /src/lgpt-tg5040.elf'
 
 #---------------------------------------------------------------------------------
 

@@ -1,6 +1,7 @@
 #include "InstrumentView.h"
 #include "Application/Instruments/MidiInstrument.h"
 #include "Application/Instruments/SampleInstrument.h"
+#include "Application/Instruments/SynthInstrument.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Model/Config.h"
 #include "BaseClasses/UIBigHexVarField.h"
@@ -12,6 +13,8 @@
 #include "ModalDialogs/MessageBox.h"
 #include "System/System/System.h"
 
+static char *instrumentTypeNames[] = {"sample", "synth"};
+
 void ImportSampleDialogCallback(View &v, ModalView &dialog) {
     ((InstrumentView &)v).OnFocus();
 }
@@ -21,10 +24,14 @@ InstrumentView::InstrumentView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 	project_=data->project_ ;
 	lastFocusID_=0 ;
 	current_=0 ;
+	// Plain Variable (not Watched): type switch must run after ProcessArrow
+	// returns, otherwise Empty() deletes the field still on the stack.
+	typeVar_ = new Variable("type", IVP_TYPE, instrumentTypeNames, 2, 0);
 	onInstrumentChange() ;
 }
 
 InstrumentView::~InstrumentView() {
+	delete typeVar_;
 }
 
 InstrumentType InstrumentView::getInstrumentType() {
@@ -44,12 +51,19 @@ void InstrumentView::onInstrumentChange() {
 	InstrumentBank *bank=viewData_->project_->GetInstrumentBank() ;
 	current_=bank->GetInstrument(i) ;
 
-	if (current_!=old) {
-		current_->RemoveObserver(*this) ;
+	if (old && old!=current_) {
+		old->RemoveObserver(*this) ;
 	} ;
 	T_SimpleList<UIField>::Empty() ;
 
 	InstrumentType it=getInstrumentType() ;
+
+	// Keep type field in sync with the live instrument.
+	if (it == IT_SYNTH) {
+		typeVar_->SetInt(1, false);
+	} else if (it == IT_SAMPLE) {
+		typeVar_->SetInt(0, false);
+	}
 
     switch (it) {
 		case IT_MIDI:
@@ -58,21 +72,60 @@ void InstrumentView::onInstrumentChange() {
 		case IT_SAMPLE:
 			fillSampleParameters() ;
 			break ;
+		case IT_SYNTH:
+			fillSynthParameters() ;
+			break ;
+		case IT_LAST:
+			break ;
 	} ;
 
 	SetFocus(T_SimpleList<UIField>::GetFirst()) ;
 	IteratorPtr<UIField> it2(T_SimpleList<UIField>::GetIterator()) ;
 	for (it2->Begin();!it2->IsDone();it2->Next()) {
-        UIIntVarField &field=(UIIntVarField &)it2->CurrentItem() ;
-        if (field.GetVariableID()==lastFocusID_) {
-            SetFocus(&field) ;
-            break ;
-        }
-    } ;
-	if (current_!=old) {
+		UIField &raw = it2->CurrentItem();
+		if (raw.IsStatic()) {
+			continue;
+		}
+		UIIntVarField &field = (UIIntVarField &)raw;
+		if (field.GetVariableID() == lastFocusID_) {
+			SetFocus(&field);
+			break;
+		}
+	} ;
+	if (current_ && current_!=old) {
 		current_->AddObserver(*this) ;
 	}
 } ;
+
+void InstrumentView::applyTypeChangeIfNeeded() {
+	int i = viewData_->currentInstrument_;
+	if (i >= MAX_SAMPLEINSTRUMENT_COUNT) {
+		return;
+	}
+	InstrumentType current = getInstrumentType();
+	if (current != IT_SAMPLE && current != IT_SYNTH) {
+		return;
+	}
+	InstrumentType want = (typeVar_->GetInt() == 1) ? IT_SYNTH : IT_SAMPLE;
+	if (current == want) {
+		return;
+	}
+	InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+	if (current_) {
+		current_->RemoveObserver(*this);
+		current_ = 0;
+	}
+	bank->SetInstrumentType(i, want);
+	onInstrumentChange();
+	isDirty_ = true;
+}
+
+void InstrumentView::addTypeField(GUIPoint &position) {
+	UIIntVarField *f1 =
+	    new UIIntVarField(position, *typeVar_, "type: %s", 0, 1, 1, 1);
+	T_SimpleList<UIField>::Insert(f1);
+	f1->SetFocus();
+}
 
 void InstrumentView::fillSampleParameters() {
 
@@ -82,12 +135,17 @@ void InstrumentView::fillSampleParameters() {
 	SampleInstrument *instrument=(SampleInstrument *)instr  ;
 	GUIPoint position=GetAnchor() ;
 
-//	position._y+=View::fieldSpaceHeight_;
+	addTypeField(position);
+
+	position._y += 1;
 	Variable *v=instrument->FindVariable(SIP_SAMPLE) ;
 	SamplePool *sp=SamplePool::GetInstance() ;
-	UIIntVarField *f1=new UIIntVarField(position,*v,"sample: %s",0,sp->GetNameListSize()-1,1,0x10) ;
+	int sampleMax = sp->GetNameListSize() - 1;
+	if (sampleMax < 0) {
+		sampleMax = 0;
+	}
+	UIIntVarField *f1=new UIIntVarField(position,*v,"sample: %s",0,sampleMax,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
-	f1->SetFocus() ;
 
     position._y += 1;
 #ifdef FFMPEG_ENABLED
@@ -204,19 +262,24 @@ void InstrumentView::fillSampleParameters() {
 	f1=new UIIntVarField(position,*v,"slices: %2.2X",1,0xFF,1,0x10) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
+	int sampleEnd = instrument->GetSampleSize() - 1;
+	if (sampleEnd < 0) {
+		sampleEnd = 0;
+	}
+
 	position._y+=1 ;
 	v=instrument->FindVariable(SIP_START) ;
-	f1=new UIBigHexVarField(position,*v,7,"start: %7.7X",0,instrument->GetSampleSize()-1,16) ;
+	f1=new UIBigHexVarField(position,*v,7,"start: %7.7X",0,sampleEnd,16) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	position._y+=1 ;
 	v=instrument->FindVariable(SIP_LOOPSTART) ;
-	f1=new UIBigHexVarField(position,*v,7,"loop start: %7.7X",0,instrument->GetSampleSize()-1,16) ;
+	f1=new UIBigHexVarField(position,*v,7,"loop start: %7.7X",0,sampleEnd,16) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	position._y+=1 ;
 	v=instrument->FindVariable(SIP_END) ;
-	f1=new UIBigHexVarField(position,*v,7,"loop end: %7.7X",0,instrument->GetSampleSize()-1,16) ;
+	f1=new UIBigHexVarField(position,*v,7,"loop end: %7.7X",0,sampleEnd,16) ;
 	T_SimpleList<UIField>::Insert(f1) ;
 
 	v=instrument->FindVariable(SIP_TABLEAUTO) ;
@@ -266,6 +329,83 @@ void InstrumentView::fillMidiParameters() {
 
 } ;
 
+void InstrumentView::fillSynthParameters() {
+
+	int i = viewData_->currentInstrument_;
+	InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+	I_Instrument *instr = bank->GetInstrument(i);
+	SynthInstrument *instrument = (SynthInstrument *)instr;
+	GUIPoint position = GetAnchor();
+
+	addTypeField(position);
+
+	position._y += 1;
+	Variable *v = instrument->FindVariable(SYP_WAVEFORM);
+	UIIntVarField *f1 =
+	    new UIIntVarField(position, *v, "waveform: %s", 0, SYW_LAST - 1, 1, 1);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 2;
+	v = instrument->FindVariable(SYP_VOLUME);
+	f1 = new UIIntVarField(position, *v, "volume: %d [%2.2X]", 0, 255, 1, 10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 1;
+	v = instrument->FindVariable(SYP_PAN);
+	f1 = new UIIntVarField(position, *v, "pan: %2.2X", 0, 0xFE, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 1;
+	v = instrument->FindVariable(SYP_ROOTNOTE);
+	f1 = new UINoteVarField(position, *v, "root note: %s", 0, 0x7F, 1, 0x0C);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 1;
+	v = instrument->FindVariable(SYP_FINETUNE);
+	f1 = new UIIntVarField(position, *v, "detune: %2.2X", 0, 255, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 2;
+	v = instrument->FindVariable(SYP_ATTACK);
+	f1 = new UIIntVarField(position, *v, "attack: %2.2X", 0, 0xFF, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 1;
+	v = instrument->FindVariable(SYP_DECAY);
+	f1 = new UIIntVarField(position, *v, "decay: %2.2X", 0, 0xFF, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 1;
+	v = instrument->FindVariable(SYP_SUSTAIN);
+	f1 = new UIIntVarField(position, *v, "sustain: %2.2X", 0, 0xFF, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 1;
+	v = instrument->FindVariable(SYP_RELEASE);
+	f1 = new UIIntVarField(position, *v, "release: %2.2X", 0, 0xFF, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 2;
+	v = instrument->FindVariable(SYP_LFORATE);
+	f1 = new UIIntVarField(position, *v, "lfo rate: %2.2X", 0, 0xFF, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	position._y += 1;
+	v = instrument->FindVariable(SYP_LFODEPTH);
+	f1 = new UIIntVarField(position, *v, "lfo depth: %2.2X", 0, 0xFF, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+
+	v = instrument->FindVariable(SYP_TABLEAUTO);
+	position._y += 2;
+	UIIntVarField *f2 =
+	    new UIIntVarField(position, *v, "automation: %s", 0, 1, 1, 1);
+	T_SimpleList<UIField>::Insert(f2);
+
+	position._y += 1;
+	v = instrument->FindVariable(SYP_TABLE);
+	f1 = new UIIntVarOffField(position, *v, "table: %2.2X", 0x00, 0x7F, 1, 0x10);
+	T_SimpleList<UIField>::Insert(f1);
+};
 
 void InstrumentView::warpToNext(int offset) {
 	int instrument=viewData_->currentInstrument_+offset ;
@@ -353,6 +493,10 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
 
 	FieldView::ProcessButtonMask(mask) ;
 
+	// Re-type only after the field ProcessArrow has returned; rebuilding
+	// inside a WatchedVariable notify would delete the active UIField.
+	applyTypeChangeIfNeeded();
+
     Player *player=Player::GetInstance() ;
 	// B Modifier
 
@@ -394,7 +538,8 @@ void InstrumentView::ProcessButtonMask(unsigned short mask,bool pressed) {
         if (mask == EPBM_A) {
             FourCC varID = ((UIIntVarField *)GetFocus())->GetVariableID();
             if ((varID == SIP_TABLE) || (varID == MIP_TABLE) ||
-                (varID == SIP_SAMPLE) || (varID == SIP_PRINTFX)) {
+                (varID == SYP_TABLE) || (varID == SIP_SAMPLE) ||
+                (varID == SIP_PRINTFX)) {
                 viewMode_ = VM_NEW;
 			}
         } else {
@@ -483,5 +628,7 @@ void InstrumentView::DrawView() {
 void InstrumentView::OnFocus() { onInstrumentChange(); }
 
 void InstrumentView::Update(Observable &o,I_ObservableData *d) {
+	(void)o;
+	(void)d;
 	onInstrumentChange() ;
 }

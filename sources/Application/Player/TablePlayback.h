@@ -23,6 +23,7 @@ public:
 	int GetPlaybackPosition(int channel) ;
 	Table *GetTable() ;
 	bool GetAutomation() ;
+	I_Instrument *GetInstrument() { return instrument_; }
 
 	static void Reset() ;
 	static TablePlayback &GetTablePlayback(int channel) ;
