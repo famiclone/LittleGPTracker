@@ -2,6 +2,10 @@
 	<DUMPEVENT value="YES"/>
 	<AUTO_LOAD_LAST value="YES"/> <!-- change to disable auto loading -->
 	<SCREENMULT value="2"/> <!-- increase screen size -->
+	<!-- Optional: pin output device, e.g. "Apple Inc.: MacBook Pro Speakers" -->
+	<!-- <AUDIODEVICE value="Apple Inc.: MacBook Pro Speakers"/> -->
+	<AUDIOBUFFERSIZE value="256"/>
+	<AUDIOPREBUFFERCOUNT value="2"/>
 
 	<KEY_A value="a"/>
 	<KEY_B value="s"/>

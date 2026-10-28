@@ -39,6 +39,11 @@ public:
 	void fillBuffer(short *buffer,int frameCount) ;
 
 private:
+	bool deviceSupportsSampleRate(const RtAudio::DeviceInfo &info,
+	                              unsigned int sampleRate);
+	bool tryOpenDevice(unsigned int deviceID, unsigned int sampleRate,
+	                   unsigned int &bufferFrames);
+
 	RtAudio audio_ ;
   int fragSize_ ;
   char *unalignedMain_ ;

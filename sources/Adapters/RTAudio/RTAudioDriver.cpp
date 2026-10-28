@@ -7,6 +7,7 @@
 #include "System/Console/Trace.h"
 #include "System/System/System.h"
 #include <string.h>
+#include <vector>
 
 int callback(void *outputBuffer, void *inputBuffer, unsigned int nBufferFrames,
              double streamTime, RtAudioStreamStatus status, void *userData) {
@@ -51,44 +52,137 @@ RTAudioDriver::RTAudioDriver(RtAudio::Api api, AudioSettings &settings)
     thread_ = 0;
 };
 
-bool RTAudioDriver::InitDriver() {
+bool RTAudioDriver::deviceSupportsSampleRate(const RtAudio::DeviceInfo &info,
+                                              unsigned int sampleRate) {
+    // Only require a probed stereo output. CoreAudio sample-rate lists are
+    // often incomplete (and may omit 44100 when the nominal rate is 48000),
+    // so actual support is decided by openStream.
+    (void)sampleRate;
+    return info.probed && info.outputChannels >= 2;
+}
 
+bool RTAudioDriver::tryOpenDevice(unsigned int deviceID,
+                                  unsigned int sampleRate,
+                                  unsigned int &bufferFrames) {
     RtAudio::StreamParameters params;
-    int deviceID = -1;
-    std::string deviceName = settings_.audioDevice_;
-    for (uint i = 0; i < audio_.getDeviceCount(); i++) {
-        RtAudio::DeviceInfo info = audio_.getDeviceInfo(i);
-        if (info.name == deviceName) {
-            deviceID = i;
-            break;
-        }
-    }
-
-    if (deviceID < 0) {
-        deviceID = audio_.getDefaultOutputDevice();
-    }
-
     params.deviceId = deviceID;
     params.nChannels = 2;
     params.firstChannel = 0;
 
-    unsigned int sampleRate = 44100;
-    unsigned int bufferFrames = settings_.bufferSize_; // in samples
-
     try {
+        if (audio_.isStreamOpen()) {
+            audio_.closeStream();
+        }
         audio_.openStream(&params, NULL, RTAUDIO_SINT16, sampleRate,
                           &bufferFrames, &callback, (void *)this);
+        return true;
     } catch (RtError &e) {
-        Trace::Error("Error opening audio output stream: %s",
-                     e.getMessage().c_str());
+        Trace::Error("Error opening audio output stream on device %d: %s",
+                     deviceID, e.getMessage().c_str());
+        try {
+            if (audio_.isStreamOpen()) {
+                audio_.closeStream();
+            }
+        } catch (RtError &) {
+        }
         return false;
-    };
+    }
+}
+
+bool RTAudioDriver::InitDriver() {
+
+    unsigned int sampleRate =
+        settings_.sampleRate_ > 0 ? settings_.sampleRate_ : 44100;
+    unsigned int bufferFrames = settings_.bufferSize_; // in samples
+
+    std::string configuredName = settings_.audioDevice_;
+    std::vector<unsigned int> candidates;
+    std::vector<std::string> candidateNames;
+
+    // 1) System default (macOS Sound menu) — always try first when it matches
+    //    the selected name or when no explicit device was configured.
+    // 2) Explicitly named device from config / stub selection.
+    // 3) Other probed stereo outputs as fallback.
+    unsigned int systemDefaultId = audio_.getDefaultOutputDevice();
+    RtAudio::DeviceInfo systemDefaultInfo =
+        audio_.getDeviceInfo(systemDefaultId);
+    if (systemDefaultInfo.outputChannels > 0) {
+        bool useSystemDefault =
+            configuredName.empty() ||
+            systemDefaultInfo.name == configuredName ||
+            (!configuredName.empty() &&
+             systemDefaultInfo.name.find(configuredName) != std::string::npos);
+        if (useSystemDefault || configuredName.empty()) {
+            candidates.push_back(systemDefaultId);
+            candidateNames.push_back(systemDefaultInfo.name);
+        }
+    }
+
+    for (int pass = 0; pass < 2; pass++) {
+        for (unsigned int i = 0; i < audio_.getDeviceCount(); i++) {
+            RtAudio::DeviceInfo info = audio_.getDeviceInfo(i);
+            if (pass == 0) {
+                // Named match even if probe flags are incomplete.
+                if (configuredName.empty() || info.name != configuredName) {
+                    continue;
+                }
+                if (info.outputChannels < 1) {
+                    continue;
+                }
+            } else if (!deviceSupportsSampleRate(info, sampleRate)) {
+                continue;
+            }
+            bool alreadyListed = false;
+            for (unsigned int c = 0; c < candidates.size(); c++) {
+                if (candidates[c] == i) {
+                    alreadyListed = true;
+                    break;
+                }
+            }
+            if (!alreadyListed) {
+                candidates.push_back(i);
+                candidateNames.push_back(info.name);
+            }
+        }
+    }
+
+    // Last resort: any output device CoreAudio still advertises.
+    if (candidates.empty()) {
+        Trace::Log("AUDIO", "No probed stereo outputs; trying raw device list");
+        for (unsigned int i = 0; i < audio_.getDeviceCount(); i++) {
+            RtAudio::DeviceInfo info = audio_.getDeviceInfo(i);
+            if (info.outputChannels > 0) {
+                candidates.push_back(i);
+                candidateNames.push_back(info.name);
+            }
+        }
+    }
+
+    int openedID = -1;
+    std::string deviceName;
+    for (unsigned int c = 0; c < candidates.size(); c++) {
+        unsigned int tryFrames = bufferFrames;
+        Trace::Log("AUDIO", "Trying output device %d: %s", candidates[c],
+                   candidateNames[c].c_str());
+        if (tryOpenDevice(candidates[c], sampleRate, tryFrames)) {
+            openedID = (int)candidates[c];
+            deviceName = candidateNames[c];
+            bufferFrames = tryFrames;
+            break;
+        }
+    }
+
+    if (openedID < 0) {
+        Trace::Error("No usable audio output device found");
+        return false;
+    }
 
     fragSize_ = bufferFrames * 4;
-    Trace::Log("AUDIO", "RTAudio device %s successfully open - buffer=%d",
-               deviceName.c_str(), bufferFrames);
+    Trace::Log("AUDIO", "RTAudio device %d (%s) successfully open - buffer=%d",
+               openedID, deviceName.c_str(), bufferFrames);
 
     settings_.audioDevice_ = deviceName;
+    settings_.sampleRate_ = sampleRate;
 
     // Allocates a rotating sound buffer
     unalignedMain_ = (char *)SYS_MALLOC(fragSize_ + SOUND_BUFFER_MAX);
@@ -109,7 +203,14 @@ bool RTAudioDriver::InitDriver() {
 
 void RTAudioDriver::CloseDriver() {
 
-    audio_.closeStream();
+    try {
+        if (audio_.isStreamOpen()) {
+            audio_.closeStream();
+        }
+    } catch (RtError &e) {
+        Trace::Error("Error closing audio output stream: %s",
+                     e.getMessage().c_str());
+    }
 
     if (miniBlank_) {
         SYS_FREE(miniBlank_);
@@ -123,6 +224,11 @@ void RTAudioDriver::CloseDriver() {
 };
 
 bool RTAudioDriver::StartDriver() {
+    if (!audio_.isStreamOpen()) {
+        Trace::Error("Cannot start audio: stream is not open");
+        return false;
+    }
+
     thread_ = new RTAudioDriverThread(this);
     thread_->Start();
 
@@ -148,9 +254,27 @@ bool RTAudioDriver::StartDriver() {
     return true;
 }
 
-void RTAudioDriver::StopDriver() { audio_.abortStream(); };
+void RTAudioDriver::StopDriver() {
+    try {
+        if (audio_.isStreamOpen()) {
+            audio_.abortStream();
+        }
+    } catch (RtError &e) {
+        Trace::Error("Error stopping output stream: %s",
+                     e.getMessage().c_str());
+    }
+};
 
-double RTAudioDriver::GetStreamTime() { return audio_.getStreamTime(); }
+double RTAudioDriver::GetStreamTime() {
+    try {
+        if (audio_.isStreamOpen()) {
+            return audio_.getStreamTime();
+        }
+    } catch (RtError &e) {
+        Trace::Error("Error reading stream time: %s", e.getMessage().c_str());
+    }
+    return 0.0;
+}
 
 void RTAudioDriver::fillBuffer(short *stream, int frameCount) {
     int len = frameCount * 4;

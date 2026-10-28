@@ -45,33 +45,50 @@ RTAudioStub::RTAudioStub(AudioSettings &h):Audio(h),
   unsigned int devices = audio.getDeviceCount();
 
   std::string defaultDevice ;
+  std::string firstOutputDevice ;
 
   std::string name=GetAudioDevice() ; 
   const char *deviceName=(name.size()!=0)?name.c_str():0 ;
 
-  RtAudio::DeviceInfo selinfo ;
+  // Use CoreAudio's current default output (macOS Sound menu selection)
+  // when AUDIODEVICE is not set in config.xml.
+  unsigned int systemDefaultId = audio.getDefaultOutputDevice();
+  RtAudio::DeviceInfo systemDefaultInfo = audio.getDeviceInfo(systemDefaultId);
+  if (systemDefaultInfo.outputChannels > 0) {
+    defaultDevice = systemDefaultInfo.name;
+  }
+
   for (unsigned int i=0; i<devices; i++) 
   {
     RtAudio::DeviceInfo info = audio.getDeviceInfo(i);
-    if (info.outputChannels>0)
+    // Skip devices CoreAudio could not probe (common with some BT /
+    // aggregate endpoints that still advertise output channels).
+    if (info.outputChannels>0 && info.probed)
     {
-      if (info.isDefaultOutput || defaultDevice.length() ==0)
-      {
-        defaultDevice=info.name ;
-        if (!selinfo.probed) selinfo=info ;
+      if (firstOutputDevice.empty()) {
+        firstOutputDevice = info.name;
       }
 
       if ((deviceName)&&(!strncmp(deviceName,info.name.c_str(),strlen(deviceName))))
       {
         selectedDevice_=info.name ;
-        selinfo=info ;
       }
-      Trace::Log("AUDIO","Found device %s",info.name.c_str()) ;
+      Trace::Log("AUDIO","Found device %s%s",info.name.c_str(),
+                 (i == systemDefaultId) ? " [system default]" : "") ;
+    }
+    else if (info.outputChannels>0)
+    {
+      Trace::Log("AUDIO","Skipping unprobeable device %s",info.name.c_str()) ;
+      // Still allow the system default even when probe flags are incomplete.
+      if (i == systemDefaultId && selectedDevice_.empty() &&
+          defaultDevice.empty()) {
+        defaultDevice = info.name;
+      }
     }
   }
   if (selectedDevice_.length()==0)
   {
-    selectedDevice_=defaultDevice ;
+    selectedDevice_ = !defaultDevice.empty() ? defaultDevice : firstOutputDevice;
   }
   Trace::Log("AUDIO","Selecting: %s",selectedDevice_.c_str()) ;
 

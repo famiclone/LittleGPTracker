@@ -111,7 +111,13 @@ RG35XXPLUSDIRS := $(LINUXDIRS) $(DUMMYMIDIDIRS) $(SDL2DIRS) $(SDL2AUDIODIRS)
 STEAMDIRS := $(LINUXDIRS) $(JACKDIRS) $(RTAUDIODIRS) $(RTMIDIDIRS) $(SDLDIRS)
 X64DIRS := $(LINUXDIRS) $(RTMIDIDIRS) $(SDL2DIRS) $(SDL2AUDIODIRS)
 X86DIRS := $(LINUXDIRS) $(RTMIDIDIRS) $(SDL2DIRS) $(SDL2AUDIODIRS)
-MACOSDIRS := $(LINUXDIRS) $(RTAUDIODIRS) $(RTMIDIDIRS) $(SDL2DIRS)
+MACOSBASEDIRS := \
+	../sources/Adapters/MacOS/MacOSMain \
+	../sources/Adapters/MacOS/MacOSSystem \
+	../sources/Adapters/Unix/FileSystem \
+	../sources/Adapters/Unix/Process \
+	../sources/System/Process
+MACOSDIRS := $(MACOSBASEDIRS) $(RTAUDIODIRS) $(RTMIDIDIRS) $(SDL2DIRS)
 
 #---------------------------------------------------------------------------------
 # Consoles/Embedded
@@ -331,7 +337,17 @@ RG35XXPLUSFILES := $(LINUXFILES) $(SDLAUDIOFILES) $(DUMMYMIDIFILES)
 STEAMFILES := $(LINUXFILES) $(RTAUDIOFILES) $(RTMIDIFILES) $(JACKFILES)
 X64FILES := $(LINUXFILES) $(RTMIDIFILES) $(SDLAUDIOFILES)
 X86FILES := $(LINUXFILES) $(RTMIDIFILES) $(SDLAUDIOFILES)
-MACOSFILES := $(LINUXFILES) $(RTAUDIOFILES) $(RTMIDIFILES)
+MACOSBASEFILES := \
+	UnixFileSystem.o \
+	MacOSmain.o \
+	MacOSSystem.o \
+	GUIFactory.o \
+	SDLGUIWindowImp.o \
+	SDLEventManager.o \
+	Process.o \
+	UnixProcess.o \
+	SDLTimer.o
+MACOSFILES := $(MACOSBASEFILES) $(RTAUDIOFILES) $(RTMIDIFILES)
 
 #---------------------------------------------------------------------------------
 # Consoles/Embedded
