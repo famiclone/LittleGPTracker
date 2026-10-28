@@ -1,7 +1,11 @@
 #include "PhraseView.h"
+#include "Application/AppWindow.h"
 #include "Application/Instruments/CommandList.h"
+#include "Application/Instruments/SampleInstrument.h"
+#include "Application/Instruments/SamplePool.h"
 #include "Application/Model/Scale.h"
 #include "Application/Model/Table.h"
+#include "Application/Player/PlayerMixer.h"
 #include "Application/Utils/HelpLegend.h"
 #include "Application/Utils/char.h"
 #include "Application/Views/CommandSelectorCommon.h"
@@ -36,6 +40,16 @@ PhraseView::PhraseView(GUIWindow &w, ViewData *viewData)
     lastCmd_ = I_CMD_NONE;
     lastParam_ = 0;
     commandSelectorModalActive_ = false;
+    waveCacheSample_ = -1;
+    waveCacheDomain_ = -1;
+    waveCacheSlices_ = -1;
+    memset(wavePeak_, 0, sizeof(wavePeak_));
+    overlayValid_ = false;
+    overlayDrawnSample_ = -1;
+    overlayDrawnDomain_ = -1;
+    overlayDrawnSlices_ = -1;
+    overlayDrawnSlice_ = -2;
+    stickyPlayingSlice_ = -1;
 
     clipboard_.active_ = false;
     clipboard_.width_ = 0;
@@ -1127,6 +1141,293 @@ int PhraseView::findClosestInstrumentFor(int row) {
     return -1; // none found in phrase
 }
 
+/*
+ * Reserve char cells under the phrase so the vector overlay has a clean
+ * background (drawn in DrawOverlay after the char grid flush).
+ */
+void PhraseView::drawSampleStrip() {
+    if (miniLayout_) {
+        return;
+    }
+
+    GUIPoint anchor = GetAnchor();
+    const int stripLeft = View::margin_ + 1;
+    const int stripWidth = 38;
+    const int stripTop = anchor._y + 17;
+    const int stripHeight = 5;
+
+    ClearRect(stripLeft - 1, stripTop, stripWidth + 2, stripHeight);
+}
+
+void PhraseView::ensureWaveformCache(short *pcm, int domain, int nCh,
+                                     int sampleIdx, int nSlices) {
+    if (waveCacheSample_ == sampleIdx && waveCacheDomain_ == domain &&
+        waveCacheSlices_ == nSlices) {
+        return;
+    }
+    waveCacheSample_ = sampleIdx;
+    waveCacheDomain_ = domain;
+    waveCacheSlices_ = nSlices;
+    for (int b = 0; b < kWaveBins; b++) {
+        int start = (int)((long)b * domain / kWaveBins);
+        int end = (int)((long)(b + 1) * domain / kWaveBins);
+        if (end <= start) {
+            end = start + 1;
+        }
+        if (end > domain) {
+            end = domain;
+        }
+        int peak = 0;
+        int stride = ((end - start) / 48) + 1;
+        for (int f = start; f < end; f += stride) {
+            int sample = pcm[f * nCh];
+            if (sample < 0) {
+                sample = -sample;
+            }
+            if (sample > peak) {
+                peak = sample;
+            }
+        }
+        // Store 0..255 amplitude for later scaling to strip height.
+        int amp = (peak * 255) / 32768;
+        if (amp < 1 && peak > 0) {
+            amp = 1;
+        }
+        if (amp > 255) {
+            amp = 255;
+        }
+        wavePeak_[b] = (unsigned char)amp;
+    }
+}
+
+int PhraseView::resolvePlayingSlice(int instrId, I_Instrument *instr,
+                                    int nSlices) {
+    if (nSlices <= 1) {
+        stickyPlayingSlice_ = -1;
+        return -1;
+    }
+
+    Player *player = Player::GetInstance();
+    PlayerMixer *pm = PlayerMixer::GetInstance();
+
+    if (player->IsRunning()) {
+        // Prefer the note currently sounding on a channel using this instrument.
+        for (int c = 0; c < SONG_CHANNEL_COUNT; c++) {
+            int note = pm->GetChannelNote(c);
+            if (note == 0xFF || note >= nSlices) {
+                continue;
+            }
+            I_Instrument *chInstr = pm->GetInstrument(c);
+            if (!chInstr) {
+                chInstr = pm->GetLastInstrument(c);
+            }
+            if (chInstr == instr) {
+                stickyPlayingSlice_ = note;
+                return note;
+            }
+        }
+
+        // Oneshots clear notes_ quickly — fall back to the note under the
+        // playhead in this phrase for a channel that is playing it.
+        unsigned char *notes =
+            phrase_->note_ + (16 * viewData_->currentPhrase_);
+        unsigned char *instrs =
+            phrase_->instr_ + (16 * viewData_->currentPhrase_);
+        for (int c = 0; c < SONG_CHANNEL_COUNT; c++) {
+            if (!player->IsChannelPlaying(c)) {
+                continue;
+            }
+            if (viewData_->currentPlayPhrase_[c] != viewData_->currentPhrase_) {
+                continue;
+            }
+            if (viewData_->playMode_ == PM_AUDITION) {
+                continue;
+            }
+            int prow = viewData_->phrasePlayPos_[c];
+            if (prow < 0 || prow > 15) {
+                continue;
+            }
+            unsigned char n = notes[prow];
+            if (n == 0xFF || n >= nSlices) {
+                continue;
+            }
+            unsigned char id = instrs[prow];
+            if (id == 0xFF) {
+                id = (unsigned char)findClosestInstrumentFor(prow);
+            }
+            if ((int)id == instrId) {
+                stickyPlayingSlice_ = n;
+                return n;
+            }
+        }
+
+        // Keep last slice lit between oneshot gaps so we don't thrash redraws
+        // (and so the highlight doesn't flicker every tick).
+        if (stickyPlayingSlice_ >= 0 && stickyPlayingSlice_ < nSlices) {
+            return stickyPlayingSlice_;
+        }
+    } else {
+        stickyPlayingSlice_ = -1;
+    }
+
+    // Editing: highlight the slice for the note on the cursor row.
+    unsigned char *notes = phrase_->note_ + (16 * viewData_->currentPhrase_);
+    unsigned char n = notes[row_];
+    if (n != 0xFF && n < nSlices) {
+        return n;
+    }
+    return -1;
+}
+
+/*
+ * Pixel waveform + slice markers/highlight. Domain matches the engine:
+ * slices divide [0 .. loopEnd] (or full sample if loop end unset).
+ */
+void PhraseView::DrawOverlay() {
+    if (miniLayout_) {
+        return;
+    }
+
+    AppWindow &aw = (AppWindow &)w_;
+    GUIPoint anchor = GetAnchor();
+
+    const int stripLeft = View::margin_ + 1;
+    const int stripWidth = 38;
+    const int stripTop = anchor._y + 17;
+    const int stripHeight = 5;
+    const int cw = AppWindow::CharWidth();
+    const int ch = AppWindow::CharHeight();
+
+    const int px = stripLeft * cw;
+    const int py = stripTop * ch;
+    const int pw = stripWidth * cw;
+    const int ph = stripHeight * ch;
+
+    int instrId = findClosestInstrumentFor(row_);
+    if (instrId < 0) {
+        overlayValid_ = false;
+        return;
+    }
+
+    InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+    I_Instrument *instr = bank->GetInstrument(instrId);
+    if (!instr || instr->GetType() != IT_SAMPLE) {
+        overlayValid_ = false;
+        return;
+    }
+
+    SampleInstrument *si = (SampleInstrument *)instr;
+    int sampleIdx = si->GetSampleIndex();
+    if (sampleIdx < 0 || sampleIdx == NO_SAMPLE) {
+        overlayValid_ = false;
+        return;
+    }
+
+    SoundSource *src = SamplePool::GetInstance()->GetSource(sampleIdx);
+    if (!src) {
+        overlayValid_ = false;
+        return;
+    }
+
+    short *pcm = (short *)src->GetSampleBuffer(-1);
+    int nFrames = src->GetSize(-1);
+    int nCh = src->GetChannelCount(-1);
+    if (!pcm || nFrames <= 0 || nCh < 1) {
+        overlayValid_ = false;
+        return;
+    }
+
+    // Same bounds the player uses before slicing (loop end, clamped to size).
+    int domain = si->GetLoopEnd();
+    if (domain <= 0 || domain > nFrames) {
+        domain = nFrames;
+    }
+
+    Variable *slicesVar = si->FindVariable(SIP_SLICES);
+    int nSlices = slicesVar ? slicesVar->GetInt() : 1;
+    if (nSlices < 1) {
+        nSlices = 1;
+    }
+
+    int playingSlice = resolvePlayingSlice(instrId, instr, nSlices);
+
+    // Flush is invoked on every player tick / expose. Re-painting ~100 rects
+    // each time starves the audio fill thread on macOS — keep the previous
+    // pixels when the visible strip state is unchanged.
+    if (overlayValid_ && overlayDrawnSample_ == sampleIdx &&
+        overlayDrawnDomain_ == domain && overlayDrawnSlices_ == nSlices &&
+        overlayDrawnSlice_ == playingSlice) {
+        return;
+    }
+
+    ensureWaveformCache(pcm, domain, nCh, sampleIdx, nSlices);
+
+    GUIRect stripDirty(px - 2, py, px + pw + 2, py + ph);
+    aw.BeginBatchDraw();
+
+    // Backdrop + side rails
+    aw.FillRect(stripDirty, CD_BACKGROUND);
+    GUIRect leftRail(px - 2, py, px, py + ph);
+    GUIRect rightRail(px + pw, py, px + pw + 2, py + ph);
+    aw.FillRect(leftRail, CD_BORDER);
+    aw.FillRect(rightRail, CD_BORDER);
+
+    // Active slice fill — use PLAY so it stays visible under the waveform.
+    if (playingSlice >= 0) {
+        int x0 = px + (int)((long)playingSlice * pw / nSlices);
+        int x1 = px + (int)((long)(playingSlice + 1) * pw / nSlices);
+        if (x1 <= x0) {
+            x1 = x0 + 1;
+        }
+        GUIRect band(x0, py, x1, py + ph);
+        aw.FillRect(band, CD_HILITE2);
+        GUIRect tip(x0, py, x1, py + 2);
+        aw.FillRect(tip, CD_PLAY);
+        GUIRect tip2(x0, py + ph - 2, x1, py + ph);
+        aw.FillRect(tip2, CD_PLAY);
+    }
+
+    // Cached envelope mapped across the strip.
+    const int midY = py + ph / 2;
+    const int maxAmp = ph / 2 - 1;
+    for (int b = 0; b < kWaveBins; b++) {
+        int x0 = px + (int)((long)b * pw / kWaveBins);
+        int x1 = px + (int)((long)(b + 1) * pw / kWaveBins);
+        if (x1 <= x0) {
+            x1 = x0 + 1;
+        }
+        int amp = (wavePeak_[b] * maxAmp) / 255;
+        if (amp < 1 && wavePeak_[b] > 0) {
+            amp = 1;
+        }
+        if (amp <= 0) {
+            continue;
+        }
+        int sliceOfBin = (nSlices > 1) ? (b * nSlices) / kWaveBins : -1;
+        ColorDefinition col =
+            (sliceOfBin == playingSlice) ? CD_PLAY : CD_HILITE1;
+        GUIRect column(x0, midY - amp, x1, midY + amp + 1);
+        aw.FillRect(column, col);
+    }
+
+    // Slice markers on top of the waveform.
+    if (nSlices > 1) {
+        for (int s = 1; s < nSlices; s++) {
+            int mx = px + (int)((long)s * pw / nSlices);
+            GUIRect marker(mx, py, mx + 1, py + ph);
+            aw.FillRect(marker, CD_BORDER);
+        }
+    }
+
+    aw.EndBatchDraw(stripDirty);
+
+    overlayValid_ = true;
+    overlayDrawnSample_ = sampleIdx;
+    overlayDrawnDomain_ = domain;
+    overlayDrawnSlices_ = nSlices;
+    overlayDrawnSlice_ = playingSlice;
+}
+
 void PhraseView::processSelectionButtonMask(unsigned short mask) {
 
     Player *player = Player::GetInstance();
@@ -1250,6 +1551,8 @@ void PhraseView::setTextProps(GUITextProperties &props, int row, int col,
 void PhraseView::DrawView() {
 
     Clear();
+    overlayValid_ = false; // Clear() wipes the pixel strip; redraw on next Flush
+    stickyPlayingSlice_ = -1;
     View::EnableNotification();
 
     GUITextProperties props;
@@ -1447,6 +1750,7 @@ void PhraseView::DrawView() {
     }
 
     drawMap();
+    drawSampleStrip();
     drawNotes();
 
     Player *player = Player::GetInstance();
@@ -1463,6 +1767,9 @@ void PhraseView::DrawView() {
 void PhraseView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
 
     GUITextProperties props;
+    // Do not ClearRect the sample strip here — that dirties char cells under the
+    // pixel overlay every tick and forces expensive surface updates. The strip
+    // is reserved once in DrawView.
     drawNotes();
 
     GUIPoint anchor = GetAnchor();

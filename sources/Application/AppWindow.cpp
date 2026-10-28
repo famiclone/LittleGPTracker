@@ -201,6 +201,60 @@ void AppWindow::ClearRect(GUIRect &r) {
     }
 };
 
+void AppWindow::FillRect(GUIRect &r, ColorDefinition cd) {
+    GUIColor gcolor = normalColor_;
+    switch (cd) {
+    case CD_BACKGROUND:
+        gcolor = backgroundColor_;
+        break;
+    case CD_NORMAL:
+        break;
+    case CD_BORDER:
+        gcolor = borderColor_;
+        break;
+    case CD_HILITE1:
+        gcolor = highlightColor_;
+        break;
+    case CD_HILITE2:
+        gcolor = highlight2Color_;
+        break;
+    case CD_CONSOLE:
+        gcolor = consoleColor_;
+        break;
+    case CD_CURSOR:
+        gcolor = cursorColor_;
+        break;
+    case CD_PLAY:
+        gcolor = playColor_;
+        break;
+    case CD_MUTE:
+        gcolor = muteColor_;
+        break;
+    case CD_SONGVIEWFE:
+        gcolor = songviewfeColor_;
+        break;
+    case CD_SONGVIEW00:
+        gcolor = songview00Color_;
+        break;
+    case CD_ROW:
+        gcolor = rownumberColor_;
+        break;
+    case CD_ROW2:
+        gcolor = rownumber2Color_;
+        break;
+    case CD_MAJORBEAT:
+        gcolor = majorbeatColor_;
+        break;
+    case CD_COL_TITLE:
+        gcolor = columnTitleColor_;
+        break;
+    default:
+        break;
+    }
+    GUIWindow::SetColor(gcolor);
+    GUIWindow::DrawRect(r);
+}
+
 //
 // Redraws the screen and flush it.
 //
@@ -314,6 +368,9 @@ void AppWindow::Flush() {
         pos._x = 0;
     }
     long flushEnd = System::GetInstance()->GetClock();
+    if (_currentView) {
+        _currentView->DrawOverlay();
+    }
     GUIWindow::Flush();
     Unlock();
     memcpy(_preScreen, _charScreen, 1200);

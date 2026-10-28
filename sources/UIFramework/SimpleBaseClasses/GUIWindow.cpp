@@ -29,6 +29,10 @@ void GUIWindow::ClearRect(GUIRect &r) {
 	_imp->ClearRect(r) ;
 }
 
+void GUIWindow::DrawRect(GUIRect &r) {
+	_imp->DrawRect(r) ;
+}
+
 void GUIWindow::DrawString(const char *string,GUIPoint &pos,GUITextProperties &props,bool overlay)
 {
 	_imp->DrawString(string,pos,props,overlay) ;
@@ -67,6 +71,14 @@ void GUIWindow::Lock() {
 }
 void GUIWindow::Unlock() {
 	_imp->Unlock() ;
+}
+
+void GUIWindow::BeginBatchDraw() {
+	_imp->BeginBatchDraw() ;
+}
+
+void GUIWindow::EndBatchDraw(GUIRect &dirty) {
+	_imp->EndBatchDraw(dirty) ;
 }
 
 void GUIWindow::Update() {

@@ -47,6 +47,12 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p) {
     int screenWidth = 320;
     int screenHeight = 240;
     windowed_ = false;
+#elif defined(PLATFORM_TG5040)
+    // TrimUI Brick / Brick Pro / Smart Pro under NextUI: take the full
+    // panel mode and centre the scaled 320x240 grid inside it.
+    int screenWidth = displayMode.w;
+    int screenHeight = displayMode.h;
+    windowed_ = false;
 #else
     int screenWidth = displayMode.w;
     int screenHeight = displayMode.h;
@@ -143,6 +149,8 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p) {
         prepareFonts();
     }
     updateCount_ = 0;
+    batchDepth_ = 0;
+    exposePending_ = false;
 };
 
 SDLGUIWindowImp::~SDLGUIWindowImp() {}
@@ -403,6 +411,11 @@ void SDLGUIWindowImp::DrawRect(GUIRect &r) {
     SDL_Rect rect;
     transform(r, &rect);
     SDL_FillRect(surface_, &rect, currentColor_);
+    if ((!framebuffer_) && (batchDepth_ == 0) &&
+        (updateCount_ < MAX_OVERLAYS)) {
+        SDL_Rect *area = updateRects_ + updateCount_++;
+        *area = rect;
+    }
 };
 
 void SDLGUIWindowImp::Clear(GUIColor &c, bool overlay) {
@@ -448,7 +461,12 @@ GUIRect SDLGUIWindowImp::GetRect() {
 // Pushback a SDL event to specify screen has to be redrawn.
 
 void SDLGUIWindowImp::Invalidate() {
-    // Todo: SL: Haven't found a good replacement here yet
+    // Coalesce exposes: player ticks can outpace Flush, and a growing
+    // SDL event queue makes UI (and then audio) progressively worse.
+    if (exposePending_) {
+        return;
+    }
+    exposePending_ = true;
     SDL_Event event;
     event.type = SDL_WINDOWEVENT;
     event.window.event = SDL_WINDOWEVENT_EXPOSED;
@@ -480,6 +498,24 @@ void SDLGUIWindowImp::Unlock() {
     }
 }
 
+void SDLGUIWindowImp::BeginBatchDraw() { batchDepth_++; }
+
+void SDLGUIWindowImp::EndBatchDraw(GUIRect &dirty) {
+    if (batchDepth_ > 0) {
+        batchDepth_--;
+    }
+    if (batchDepth_ != 0 || framebuffer_) {
+        return;
+    }
+    if (updateCount_ >= MAX_OVERLAYS) {
+        return;
+    }
+    SDL_Rect rect;
+    transform(dirty, &rect);
+    SDL_Rect *area = updateRects_ + updateCount_++;
+    *area = rect;
+}
+
 void SDLGUIWindowImp::Flush() {
     // blit partial updates on resource constrained platforms
     if ((!framebuffer_) && (updateCount_ != 0)) {
@@ -495,9 +531,11 @@ void SDLGUIWindowImp::Flush() {
         }
     }
     updateCount_ = 0;
+    batchDepth_ = 0;
 }
 
 void SDLGUIWindowImp::ProcessExpose() {
+    exposePending_ = false;
     // Expose and resize events will cause a new surface to be needed.
     surface_ = SDL_GetWindowSurface(window_);
     _window->Update();

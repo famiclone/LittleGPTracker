@@ -141,6 +141,15 @@ void WSDLGUIWindowImp::ClearRect(GUIRect &r) {
      SDL_FillRect(screen_, &rect,backgroundColor_) ;     
 } ;
 
+void WSDLGUIWindowImp::DrawRect(GUIRect &r) {
+    SDL_Rect rect;
+     rect.x=r.Left() ;
+     rect.y=r.Top() ;
+     rect.w=r.Width() ;
+     rect.h=r.Height() ;
+     SDL_FillRect(screen_, &rect,currentColor_) ;
+} ;
+
 void WSDLGUIWindowImp::Clear(GUIColor &c) {
      SDL_Rect rect;
      rect.x=rect_.Left() ;

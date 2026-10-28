@@ -91,9 +91,14 @@ bool RTAudioDriver::tryOpenDevice(unsigned int deviceID,
 
 bool RTAudioDriver::InitDriver() {
 
-    unsigned int sampleRate =
-        settings_.sampleRate_ > 0 ? settings_.sampleRate_ : 44100;
-    unsigned int bufferFrames = settings_.bufferSize_; // in samples
+    // Guard against uninitialized / nonsense rates from AudioSettings —
+    // a bad rate here makes samples play too fast or heavily distorted.
+    unsigned int sampleRate = 44100;
+    if (settings_.sampleRate_ >= 8000 && settings_.sampleRate_ <= 192000) {
+        sampleRate = (unsigned int)settings_.sampleRate_;
+    }
+    unsigned int bufferFrames =
+        settings_.bufferSize_ > 0 ? settings_.bufferSize_ : 256;
 
     std::string configuredName = settings_.audioDevice_;
     std::vector<unsigned int> candidates;
@@ -182,7 +187,8 @@ bool RTAudioDriver::InitDriver() {
                openedID, deviceName.c_str(), bufferFrames);
 
     settings_.audioDevice_ = deviceName;
-    settings_.sampleRate_ = sampleRate;
+    settings_.sampleRate_ = (int)sampleRate;
+    Trace::Log("AUDIO", "Stream sample rate=%u Hz", sampleRate);
 
     // Allocates a rotating sound buffer
     unalignedMain_ = (char *)SYS_MALLOC(fragSize_ + SOUND_BUFFER_MAX);

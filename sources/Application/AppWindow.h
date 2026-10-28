@@ -34,6 +34,9 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     virtual void Clear(bool all = false);
     virtual void ClearRect(GUIRect &rect);
     virtual void SetColor(ColorDefinition cd);
+    void FillRect(GUIRect &rect, ColorDefinition cd);
+    static int CharWidth() { return charWidth_; }
+    static int CharHeight() { return charHeight_; }
     void SetDirty();
 
   protected: // GUIWindow implementation

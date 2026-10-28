@@ -143,11 +143,18 @@ void RTAudioStub::Init()
 	settings.audioDevice_=selectedDevice_;
 	settings.bufferSize_=GetAudioBufferSize();
 	settings.preBufferCount_=GetAudioPreBufferCount();
+	settings.sampleRate_=GetPreferredSampleRate();
+	if (settings.sampleRate_ < 8000 || settings.sampleRate_ > 192000) {
+		settings.sampleRate_ = 44100;
+	}
 
   RTAudioDriver *drv=new RTAudioDriver(api_,settings) ;
   AudioOutDriver *out=new AudioOutDriver(*drv) ;
   Insert(out) ;
   sampleRate_=drv->GetSampleRate() ;
+  if (sampleRate_ < 8000 || sampleRate_ > 192000) {
+	  sampleRate_ = 44100;
+  }
 }
 
 void RTAudioStub::Close() 
@@ -162,5 +169,9 @@ void RTAudioStub::Close()
 
 int RTAudioStub::GetSampleRate()  
 {
+	// Never hand a nonsense rate to SampleInstrument (baseSpeed_ = wav/driver).
+	if (sampleRate_ < 8000 || sampleRate_ > 192000) {
+		return 44100;
+	}
 	return sampleRate_ ;
 } ;

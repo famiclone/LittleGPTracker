@@ -33,6 +33,8 @@ public: // I_GUIWindowImp implementation
 	virtual void Flush();
 	virtual void Lock() ;
 	virtual void Unlock() ;
+	virtual void BeginBatchDraw() ;
+	virtual void EndBatchDraw(GUIRect &dirty) ;
 	virtual void Clear(GUIColor &, bool overlay=false) ;
 	virtual void ClearRect(GUIRect &) ;
 	virtual void PushEvent(GUIEvent &event) ;
@@ -62,6 +64,8 @@ private:
   bool windowed_;
 	SDL_Rect updateRects_[MAX_OVERLAYS] ;
 	int updateCount_ ;
+	int batchDepth_ ;
+	bool exposePending_ ;
 	int appAnchorX_ ;
 	int appAnchorY_ ;
 	int mult_ ;

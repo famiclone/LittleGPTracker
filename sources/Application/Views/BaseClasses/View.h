@@ -106,6 +106,8 @@ class View : public Observable {
     virtual void OnPlayerUpdate(PlayerEventType, unsigned int currentTick) = 0;
     virtual void OnFocus() = 0;
     virtual void AnimationUpdate() {}
+    // Pixel overlay drawn after the char grid (e.g. vector waveforms).
+    virtual void DrawOverlay() {}
 
     void SetDirty(bool dirty);
 

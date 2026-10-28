@@ -15,6 +15,7 @@ public:
 	virtual void Clear(GUIColor &,bool overlay=false)=0 ;
 	virtual void SetColor(GUIColor &)=0 ;
 	virtual void ClearRect(GUIRect &)=0 ;
+	virtual void DrawRect(GUIRect &)=0 ;
 	virtual void DrawString(const char *string,GUIPoint &pos,GUITextProperties& p,bool overlay)=0 ;
 	virtual void DrawChar(const char c,GUIPoint &pos,GUITextProperties &)=0;
 
@@ -23,6 +24,9 @@ public:
 	virtual void Lock()=0 ;
 	virtual void Unlock()=0 ;
 	virtual void Flush()=0 ;
+	// Optional: coalesce many DrawRect calls into one dirty region (overlays).
+	virtual void BeginBatchDraw() {}
+	virtual void EndBatchDraw(GUIRect & /*dirty*/) {}
 } ;
 
 #endif
