@@ -39,6 +39,9 @@ public:
   char **GetNameList();
   int GetNameListSize();
   int ImportSample(Path &path);
+  // Load a WAV already present under samples: (no copy). Returns pool index
+  // or a negative SampleLoadResult.
+  int AddSampleFromPath(Path &path);
   bool IsImported(std::string name);
   // int InsertSample(const std::string& sampleName, bool imported, std::string fi);
   int Reassign(std::string name, bool imported);

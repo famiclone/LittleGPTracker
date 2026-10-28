@@ -193,6 +193,14 @@ void View::DoModal(ModalView *view,ModalViewCallback cb) {
 	isDirty_=true ;
 } ;
 
+void View::AnimationUpdate() {
+	// Keep modal UIs alive when the audio/player tick is paused (e.g. mic
+	// capture suspends SDL playback, so OnPlayerUpdate never fires).
+	if (modalView_) {
+		modalView_->AnimationUpdate();
+	}
+}
+
 void View::Redraw() {
 	if (modalView_) {
 		if (isDirty_) {

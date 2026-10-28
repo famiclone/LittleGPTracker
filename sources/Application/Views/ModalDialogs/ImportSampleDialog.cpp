@@ -2,6 +2,7 @@
 #include "Application/Instruments/SampleInstrument.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Views/ModalDialogs/MessageBox.h"
+#include "Application/Views/ModalDialogs/RecordSampleDialog.h"
 
 #define LIST_SIZE 15
 #define LIST_WIDTH 28
@@ -10,11 +11,16 @@ bool ImportSampleDialog::initStatic_=false ;
 Path ImportSampleDialog::sampleLib_("") ;
 Path ImportSampleDialog::currentPath_("") ;
 
-static const char *buttonText[3]= {
+static const char *buttonText[4]= {
 	"Listen",
 	"Import",
-	"Exit"	
+	"Record",
+	"Exit"
 } ;
+
+static void RecordSampleDialogCallback(View &v, ModalView &dialog) {
+	((ImportSampleDialog &)v).onRecordFinished(dialog);
+}
 
 ImportSampleDialog::ImportSampleDialog(View &view):ModalView(view) {
 	if (!initStatic_) {
@@ -86,17 +92,30 @@ void ImportSampleDialog::DrawView() {
 	} ;
 
 	y=LIST_SIZE+2 ;
-	int offset=LIST_WIDTH/4 ;
+	int offset=LIST_WIDTH/5 ;
 
 	SetColor(CD_NORMAL) ;
 
-	for (int i=0;i<3;i++) {
+	for (int i=0;i<4;i++) {
 		const char *text=buttonText[i] ;
 		x=offset*(i+1)-strlen(text)/2 ;
 		props.invert_=(i==selected_)?true:false ;
 		DrawString(x,y,text,props) ;
 	}	
 } ;
+
+void ImportSampleDialog::openRecordDialog() {
+	endPreview();
+	DoModal(new RecordSampleDialog(*this), RecordSampleDialogCallback);
+}
+
+void ImportSampleDialog::onRecordFinished(ModalView &dialog) {
+	if (dialog.GetReturnCode() == 1) {
+		// Sample written + assigned — leave the import browser.
+		EndModal(1);
+	}
+	isDirty_ = true;
+}
 
 void ImportSampleDialog::warpToNextSample(int direction) {
 
@@ -163,7 +182,20 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 		if (mask&EPBM_UP) warpToNextSample(-1) ;
 		if (mask&EPBM_DOWN) warpToNextSample(1) ;
 
+		if (selected_ == 2) { // Record — no file selection needed
+			openRecordDialog();
+			return;
+		}
+		if (selected_ == 3) { // Exit
+			endPreview();
+			EndModal(0);
+			return;
+		}
+
 		Path *element = getImportElement();
+		if (!element) {
+			return;
+		}
 		setCurrent(element, mask);
 
 		switch(selected_) {
@@ -178,10 +210,6 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 				if(!element->IsDirectory()) { // Don't import folders
 					import(*element);
 				}
-				break ;
-			case 2: // Exit ;
-				endPreview(); // Stop playback when exiting
-				EndModal(0) ;
 				break ;
 		}
 	} else if (mask&EPBM_START) { // START Modifier
@@ -211,11 +239,11 @@ void ImportSampleDialog::ProcessButtonMask(unsigned short mask,bool pressed) {
 		if (mask==EPBM_DOWN) warpToNextSample(1);
 		if (mask==EPBM_LEFT) {
 			selected_-=1;
-			if (selected_<0) selected_+=3;
+			if (selected_<0) selected_+=4;
 			isDirty_=true;
 		}
 		if (mask==EPBM_RIGHT) {
-			selected_=(selected_+1)%3;
+			selected_=(selected_+1)%4;
 			isDirty_=true;
 		}
 	}
@@ -230,16 +258,16 @@ bool ImportSampleDialog::isSampleLibRoot()
 Path* ImportSampleDialog::getImportElement() {
 	IteratorPtr<Path> it(sampleList_.GetIterator());
 	int count = 0;
-	Path *element = 0;
 	for(it->Begin(); !it->IsDone(); it->Next()) {
 		if (count++ == currentSample_) {
 			return &it->CurrentItem();
 		}
 	}
+	return 0;
 }
 
 void ImportSampleDialog::setCurrent(Path *element, unsigned short mask) {
-	if (selected_ != 2 && element->IsDirectory() && // Folders
+	if (selected_ < 2 && element->IsDirectory() && // Folders (Listen/Import only)
 		!(mask&EPBM_UP||mask&EPBM_DOWN)) { // Don't browse preview folders
 			if (element->GetName()=="..") {
 				if (isSampleLibRoot()) {

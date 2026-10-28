@@ -235,6 +235,22 @@ int SamplePool::ImportSample(Path &path) {
     return !status ?(count_-1):(-status) ;
 };
 
+int SamplePool::AddSampleFromPath(Path &path) {
+    if (count_ == MAX_PIG_SAMPLES) {
+        return -SLOAD_ERR_MAX_SAMPLES;
+    }
+    int status = loadSample(path.GetPath().c_str());
+    if (status != SLOAD_OK) {
+        return -status;
+    }
+    SetChanged();
+    SamplePoolEvent ev;
+    ev.index_ = count_ - 1;
+    ev.type_ = SPET_INSERT;
+    NotifyObservers(&ev);
+    return count_ - 1;
+}
+
 bool SamplePool::IsImported(std::string name) {
     std::string dpath="samples:";
     dpath += name;
