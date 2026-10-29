@@ -142,10 +142,7 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
         _currentView->DoModal(spd, ProjectSelectCallback);
     }
 
-    memset(_charScreen, ' ', 1200);
-    memset(_preScreen, ' ', 1200);
-    memset(_charScreenProp, 0, 1200);
-    memset(_preScreenProp, 0, 1200);
+    Clear(true);
 
     Redraw();
 };
@@ -177,8 +174,8 @@ void AppWindow::Clear(bool all) {
     memset(_charScreen, ' ', 1200);
     memset(_charScreenProp, 0, 1200);
     if (all) {
-        memset(_preScreen, ' ', 1200);
-        memset(_preScreenProp, 0, 1200);
+        memset(_preScreen, 0, 1200);
+        memset(_preScreenProp, 0xFF, 1200);
     };
 };
 
@@ -368,6 +365,8 @@ void AppWindow::Flush() {
         pos._x = 0;
     }
     long flushEnd = System::GetInstance()->GetClock();
+    // Pixel overlays (waveforms) run after the char grid. Views erase or
+    // skip their strip themselves when a modal is open.
     if (_currentView) {
         _currentView->DrawOverlay();
     }
@@ -535,40 +534,43 @@ bool AppWindow::onEvent(GUIEvent &event) {
 
     MixerService *sm = MixerService::GetInstance();
     sm->Lock();
+    {
+        SysMutexLocker locker(drawMutex_);
 
-    switch (event.GetType()) {
+        switch (event.GetType()) {
 
-    case ET_PADBUTTONDOWN:
+        case ET_PADBUTTONDOWN:
 
-        _mask |= v;
-        if (_currentView)
-            _currentView->ProcessButton(_mask, true);
-        break;
+            _mask |= v;
+            if (_currentView)
+                _currentView->ProcessButton(_mask, true);
+            break;
 
-    case ET_PADBUTTONUP:
+        case ET_PADBUTTONUP:
 
-        _mask &= (0xFFFF - v);
-        if (_currentView)
-            _currentView->ProcessButton(_mask, false);
-        break;
+            _mask &= (0xFFFF - v);
+            if (_currentView)
+                _currentView->ProcessButton(_mask, false);
+            break;
 
-    case ET_SYSQUIT:
-        _shouldQuit = true;
-        break;
+        case ET_SYSQUIT:
+            _shouldQuit = true;
+            break;
 
-        /*		case ET_KEYDOWN:
-            if
-           (event.GetValue()==EKT_ESCAPE&&!Player::GetInstance()->IsRunning()) {
-                if (_currentView!=_listView) {
-                    CloseProject() ;
-                    _isDirty=true ;
-                } else {
-                    System::GetInstance()->PostQuitMessage() ;
-                };
-            } ;*/
+            /*		case ET_KEYDOWN:
+                if
+               (event.GetValue()==EKT_ESCAPE&&!Player::GetInstance()->IsRunning()) {
+                    if (_currentView!=_listView) {
+                        CloseProject() ;
+                        _isDirty=true ;
+                    } else {
+                        System::GetInstance()->PostQuitMessage() ;
+                    };
+                } ;*/
 
-    default:
-        break;
+        default:
+            break;
+        }
     }
     sm->Unlock();
 

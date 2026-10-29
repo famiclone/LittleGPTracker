@@ -191,6 +191,10 @@ void View::DoModal(ModalView *view,ModalViewCallback cb) {
 	modalView_->OnFocus() ;
 	modalViewCallback_=cb ;
 	isDirty_=true ;
+	// Invalidate the char-screen cache so the next Flush repaints every
+	// cell (otherwise unchanged spaces leave stale pixel overlays).
+	((AppWindow &)w_).Clear(true) ;
+	((AppWindow &)w_).SetDirty() ;
 } ;
 
 void View::AnimationUpdate() {
@@ -202,13 +206,9 @@ void View::AnimationUpdate() {
 }
 
 void View::Redraw() {
+	DrawView() ;
 	if (modalView_) {
-		if (isDirty_) {
-			DrawView() ;
-		}
 		modalView_->Redraw() ;
-	} else {
-		DrawView() ;
 	}
 	isDirty_=false ;
 } ;
@@ -221,13 +221,20 @@ void View::ProcessButton(unsigned short mask, bool pressed) {
 	isDirty_=false ;
 	if (modalView_) {
 		modalView_->ProcessButton(mask,pressed);
-		modalView_->isDirty_;
+		if (modalView_->isDirty_) {
+			isDirty_=true ;
+		}
 		if (modalView_->IsFinished()) {
+			ModalView *finishedModal = modalView_ ;
+			ModalViewCallback cb = modalViewCallback_ ;
+			modalView_ = 0 ;
+			modalViewCallback_ = 0 ;
 			// process callback sending the modal dialog
-			if (modalViewCallback_) {
-				modalViewCallback_(*this,*modalView_) ;
+			if (cb) {
+				cb(*this,*finishedModal) ;
 			}
-			SAFE_DELETE(modalView_) ;
+			SAFE_DELETE(finishedModal) ;
+			((AppWindow &)w_).Clear(true) ;
 			isDirty_=true ;
 		}
 	} else {

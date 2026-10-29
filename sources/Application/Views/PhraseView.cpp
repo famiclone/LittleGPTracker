@@ -1289,8 +1289,31 @@ int PhraseView::resolvePlayingSlice(int instrId, I_Instrument *instr,
  * slices divide [0 .. loopEnd] (or full sample if loop end unset).
  * Synth instruments show oscillator*ADSR with LFO as a thin white line.
  */
+void PhraseView::clearWaveformStrip(int px, int py, int pw, int ph) {
+    if (overlayValid_ && overlayDrawnSample_ == -3 &&
+        overlayDrawnSynthKey_ == 0) {
+        return;
+    }
+    AppWindow &aw = (AppWindow &)w_;
+    GUIRect strip(px - 2, py, px + pw + 2, py + ph);
+    aw.BeginBatchDraw();
+    aw.FillRect(strip, CD_BACKGROUND);
+    aw.EndBatchDraw(strip);
+    overlayValid_ = true;
+    overlayDrawnSample_ = -3;
+    overlayDrawnDomain_ = -1;
+    overlayDrawnSlices_ = -1;
+    overlayDrawnSlice_ = -2;
+    overlayDrawnSynthKey_ = 0;
+}
+
 void PhraseView::DrawOverlay() {
     if (miniLayout_) {
+        return;
+    }
+
+    if (HasModal()) {
+        overlayValid_ = false;
         return;
     }
 
@@ -1310,14 +1333,14 @@ void PhraseView::DrawOverlay() {
 
     int instrId = findClosestInstrumentFor(row_);
     if (instrId < 0) {
-        overlayValid_ = false;
+        clearWaveformStrip(px, py, pw, ph);
         return;
     }
 
     InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
     I_Instrument *instr = bank->GetInstrument(instrId);
     if (!instr) {
-        overlayValid_ = false;
+        clearWaveformStrip(px, py, pw, ph);
         return;
     }
 
@@ -1330,7 +1353,7 @@ void PhraseView::DrawOverlay() {
         return;
     }
 
-    overlayValid_ = false;
+    clearWaveformStrip(px, py, pw, ph);
 }
 
 void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
@@ -1339,13 +1362,13 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
     SampleInstrument *si = (SampleInstrument *)instr;
     int sampleIdx = si->GetSampleIndex();
     if (sampleIdx < 0 || sampleIdx == NO_SAMPLE) {
-        overlayValid_ = false;
+        clearWaveformStrip(px, py, pw, ph);
         return;
     }
 
     SoundSource *src = SamplePool::GetInstance()->GetSource(sampleIdx);
     if (!src) {
-        overlayValid_ = false;
+        clearWaveformStrip(px, py, pw, ph);
         return;
     }
 
@@ -1353,7 +1376,7 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
     int nFrames = src->GetSize(-1);
     int nCh = src->GetChannelCount(-1);
     if (!pcm || nFrames <= 0 || nCh < 1) {
-        overlayValid_ = false;
+        clearWaveformStrip(px, py, pw, ph);
         return;
     }
 

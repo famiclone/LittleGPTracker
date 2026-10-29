@@ -999,6 +999,8 @@ void SongView::DrawView() {
         os << songname_.substr(5);
     }
 
+    os << " " << viewData_->project_->GetTempo();
+
     std::string buffer(os.str());
 
     DrawString(pos._x, pos._y, buffer.c_str(), props);

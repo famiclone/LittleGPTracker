@@ -56,6 +56,7 @@ class PhraseView : public View {
     void drawSampleStrip();
     void ensureWaveformCache(short *pcm, int domain, int nCh, int sampleIdx,
                              int nSlices);
+    void clearWaveformStrip(int px, int py, int pw, int ph);
     int resolvePlayingSlice(int instrId, I_Instrument *instr, int nSlices);
     void drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
                            I_Instrument *instr);
