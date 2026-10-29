@@ -111,6 +111,8 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
       channel_[i]->SetLPFFreq(mixer->GetChannelLPF(i));
       channel_[i]->SetDelay(mixer->GetChannelDelaySteps(i),
                             mixer->GetChannelDelayAmt(i));
+      channel_[i]->SetReverb(mixer->GetChannelReverbSize(i),
+                             mixer->GetChannelReverbAmt(i));
   }
   MixerService *ms=MixerService::GetInstance();
   ms->SetPregain(project_->GetPregain());

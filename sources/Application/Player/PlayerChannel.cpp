@@ -26,11 +26,23 @@ PlayerChannel::PlayerChannel(int index) {
     delayLen_ = 0;
     delayWritePos_ = 0;
     delayBuf_ = 0;
+    reverbSize_ = 0;
+    reverbAmt_ = 0;
+    reverbFb_ = i2fp(0);
+    reverbBuf_ = 0;
+    for (int i = 0; i < CHANNEL_REVERB_COMBS; i++) {
+        combOff_[i] = combLen_[i] = combPos_[i] = 0;
+    }
+    for (int i = 0; i < CHANNEL_REVERB_APS; i++) {
+        apOff_[i] = apLen_[i] = apPos_[i] = 0;
+    }
 }
 
 PlayerChannel::~PlayerChannel() {
     delete[] delayBuf_;
     delayBuf_ = 0;
+    delete[] reverbBuf_;
+    reverbBuf_ = 0;
 }
 
 void PlayerChannel::StartInstrument(I_Instrument *instr,unsigned char note,bool trigger) {
@@ -162,6 +174,138 @@ bool PlayerChannel::applyDelay(fixed *buffer, int samplecount) {
     return any;
 }
 
+void PlayerChannel::ensureReverbBuffer() {
+    if (reverbBuf_) {
+        return;
+    }
+    reverbBuf_ = new fixed[CHANNEL_REVERB_BUF_FRAMES];
+    memset(reverbBuf_, 0, sizeof(fixed) * CHANNEL_REVERB_BUF_FRAMES);
+}
+
+void PlayerChannel::syncReverb() {
+    if (reverbSize_ == 0) {
+        return;
+    }
+    ensureReverbBuffer();
+
+    // Freeverb-ish base lengths at size=8; scale linearly with size.
+    static const int kCombBase[CHANNEL_REVERB_COMBS] = {1116, 1188, 1277, 1356};
+    static const int kApBase[CHANNEL_REVERB_APS] = {225, 556};
+
+    int offset = 0;
+    for (int i = 0; i < CHANNEL_REVERB_COMBS; i++) {
+        int len = (kCombBase[i] * (int)reverbSize_) / 8;
+        if (len < 2) {
+            len = 2;
+        }
+        combOff_[i] = offset;
+        combLen_[i] = len;
+        combPos_[i] = 0;
+        offset += len * 2;
+    }
+    for (int i = 0; i < CHANNEL_REVERB_APS; i++) {
+        int len = (kApBase[i] * (int)reverbSize_) / 8;
+        if (len < 2) {
+            len = 2;
+        }
+        apOff_[i] = offset;
+        apLen_[i] = len;
+        apPos_[i] = 0;
+        offset += len * 2;
+    }
+    if (offset > CHANNEL_REVERB_BUF_FRAMES) {
+        // Should not happen with the chosen bases; disable rather than overrun.
+        reverbSize_ = 0;
+        return;
+    }
+    // Longer room → higher feedback (capped under 1).
+    reverbFb_ = fl2fp(0.55f + reverbSize_ * 0.025f);
+    memset(reverbBuf_, 0, sizeof(fixed) * CHANNEL_REVERB_BUF_FRAMES);
+}
+
+void PlayerChannel::SetReverb(unsigned char size, unsigned char amt) {
+    if (size > CHANNEL_REVERB_MAX_SIZE) {
+        size = CHANNEL_REVERB_MAX_SIZE;
+    }
+    bool sizeChanged = (size != reverbSize_);
+    reverbSize_ = size;
+    reverbAmt_ = amt;
+    if (size == 0) {
+        return;
+    }
+    if (sizeChanged) {
+        syncReverb();
+    }
+}
+
+bool PlayerChannel::applyReverb(fixed *buffer, int samplecount) {
+    if (reverbSize_ == 0 || !reverbBuf_) {
+        return false;
+    }
+
+    fixed wet = fl2fp(reverbAmt_ / 255.0f);
+    fixed dry = fp_sub(i2fp(1), wet);
+    fixed apG = fl2fp(0.5f);
+    bool any = false;
+
+    for (int n = 0; n < samplecount; n++) {
+        int idx = n * 2;
+        fixed inL = buffer[idx];
+        fixed inR = buffer[idx + 1];
+
+        fixed sumL = i2fp(0);
+        fixed sumR = i2fp(0);
+        for (int c = 0; c < CHANNEL_REVERB_COMBS; c++) {
+            int pos = combPos_[c];
+            int bi = combOff_[c] + pos * 2;
+            fixed dL = reverbBuf_[bi];
+            fixed dR = reverbBuf_[bi + 1];
+            reverbBuf_[bi] = fp_add(inL, fp_mul(reverbFb_, dL));
+            reverbBuf_[bi + 1] = fp_add(inR, fp_mul(reverbFb_, dR));
+            sumL = fp_add(sumL, dL);
+            sumR = fp_add(sumR, dR);
+            pos++;
+            if (pos >= combLen_[c]) {
+                pos = 0;
+            }
+            combPos_[c] = pos;
+        }
+
+        // Average combs then run through allpasses
+        sumL = fp_mul(sumL, fl2fp(0.25f));
+        sumR = fp_mul(sumR, fl2fp(0.25f));
+
+        for (int a = 0; a < CHANNEL_REVERB_APS; a++) {
+            int pos = apPos_[a];
+            int bi = apOff_[a] + pos * 2;
+            fixed bufL = reverbBuf_[bi];
+            fixed bufR = reverbBuf_[bi + 1];
+            fixed outL = fp_add(fp_mul(fp_sub(i2fp(0), apG), sumL), bufL);
+            fixed outR = fp_add(fp_mul(fp_sub(i2fp(0), apG), sumR), bufR);
+            reverbBuf_[bi] = fp_add(sumL, fp_mul(apG, outL));
+            reverbBuf_[bi + 1] = fp_add(sumR, fp_mul(apG, outR));
+            sumL = outL;
+            sumR = outR;
+            pos++;
+            if (pos >= apLen_[a]) {
+                pos = 0;
+            }
+            apPos_[a] = pos;
+        }
+
+        fixed outL = fp_add(fp_mul(dry, inL), fp_mul(wet, sumL));
+        fixed outR = fp_add(fp_mul(dry, inR), fp_mul(wet, sumR));
+        buffer[idx] = outL;
+        buffer[idx + 1] = outR;
+
+        if (outL != 0 || outR != 0 || inL != 0 || inR != 0 || sumL != 0 ||
+            sumR != 0) {
+            any = true;
+        }
+    }
+    return any;
+}
+
 bool PlayerChannel::Render(fixed *buffer,int samplecount) {
    bool gotInstr = false;
    if (instr_) {
@@ -212,7 +356,7 @@ bool PlayerChannel::Render(fixed *buffer,int samplecount) {
                  lpfPrevOutput_[1] = out_r;
              }
          }
-   } else if (delaySteps_ != 0) {
+   } else if (delaySteps_ != 0 || reverbSize_ != 0) {
        for (int i = 0; i < samplecount * 2; i++) {
            buffer[i] = i2fp(0);
        }
@@ -220,12 +364,15 @@ bool PlayerChannel::Render(fixed *buffer,int samplecount) {
        return false;
    }
 
-   bool gotDelay = false;
+   bool gotFx = false;
    if (delaySteps_ != 0) {
-       gotDelay = applyDelay(buffer, samplecount);
+       gotFx = applyDelay(buffer, samplecount) || gotFx;
+   }
+   if (reverbSize_ != 0) {
+       gotFx = applyReverb(buffer, samplecount) || gotFx;
    }
 
-   if (!gotInstr && !gotDelay) {
+   if (!gotInstr && !gotFx) {
        return false;
    }
 
@@ -325,5 +472,11 @@ void PlayerChannel::Reset() {
   delayWritePos_ = 0;
   if (delayBuf_) {
       memset(delayBuf_, 0, sizeof(fixed) * CHANNEL_DELAY_MAX_FRAMES * 2);
+  }
+  reverbSize_ = 0;
+  reverbAmt_ = 0;
+  reverbFb_ = i2fp(0);
+  if (reverbBuf_) {
+      memset(reverbBuf_, 0, sizeof(fixed) * CHANNEL_REVERB_BUF_FRAMES);
   }
 };

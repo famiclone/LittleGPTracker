@@ -32,6 +32,15 @@ public:
     inline void SetChannelDelayAmt(int i, unsigned char value) {
         channelDelayAmt_[i] = value;
     };
+    // Reverb: size=0 off (1-16 room); amt is wet mix (0-255)
+    inline unsigned char GetChannelReverbSize(int i) { return channelReverbSize_[i]; };
+    inline void SetChannelReverbSize(int i, unsigned char value) {
+        channelReverbSize_[i] = value;
+    };
+    inline unsigned char GetChannelReverbAmt(int i) { return channelReverbAmt_[i]; };
+    inline void SetChannelReverbAmt(int i, unsigned char value) {
+        channelReverbAmt_[i] = value;
+    };
 
 	virtual void SaveContent(TiXmlNode *node) ;
 	virtual void RestoreContent(TiXmlElement *element);
@@ -42,6 +51,8 @@ private:
     unsigned short channelLPF_[SONG_CHANNEL_COUNT];
     unsigned char channelDelaySteps_[SONG_CHANNEL_COUNT];
     unsigned char channelDelayAmt_[SONG_CHANNEL_COUNT];
+    unsigned char channelReverbSize_[SONG_CHANNEL_COUNT];
+    unsigned char channelReverbAmt_[SONG_CHANNEL_COUNT];
 } ;	
 
 #endif

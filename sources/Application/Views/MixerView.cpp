@@ -51,11 +51,11 @@ void MixerView::OnFocus() { viewData_->mixerCol_ = viewData_->songX_; }
 
 void MixerView::updateCursor(int dx,int dy) {
     if (dy != 0) {
-        // UP/DOWN cycles between rows 1..4 (VOL, HPF, LPF, DLY)
+        // UP/DOWN cycles between rows 1..5 (VOL, HPF, LPF, DLY, REV)
         if (dy < 0) {
-            mixerRow_ = (mixerRow_ == 1) ? 4 : mixerRow_ - 1;
+            mixerRow_ = (mixerRow_ == 1) ? 5 : mixerRow_ - 1;
         } else {
-            mixerRow_ = (mixerRow_ == 4) ? 1 : mixerRow_ + 1;
+            mixerRow_ = (mixerRow_ == 5) ? 1 : mixerRow_ + 1;
         }
 		isDirty_ = true;
     }
@@ -166,7 +166,53 @@ void MixerView::processNormalButtonMask(unsigned int mask) {
             isDirty_ = true;
         }
     } else if (mask & EPBM_A) {
-        if (mixerRow_ == 4) {
+        if (mixerRow_ == 5) {
+            // REV: A+Up/Down = room size, A+Left/Right = wet mix
+            Mixer *m = Mixer::GetInstance();
+            int col = viewData_->mixerCol_;
+            int size = m->GetChannelReverbSize(col);
+            int amt = m->GetChannelReverbAmt(col);
+
+            if (mask & EPBM_UP) {
+                if (size < CHANNEL_REVERB_MAX_SIZE) {
+                    size++;
+                }
+                if (size > 0 && amt == 0) {
+                    amt = 0x60;
+                }
+            } else if (mask & EPBM_DOWN) {
+                if (size > 0) {
+                    size--;
+                }
+            } else if (mask & EPBM_RIGHT) {
+                amt = amt + 8;
+                if (amt > 255) {
+                    amt = 255;
+                }
+                if (size == 0 && amt > 0) {
+                    size = 4;
+                }
+            } else if (mask & EPBM_LEFT) {
+                amt = amt - 8;
+                if (amt < 0) {
+                    amt = 0;
+                }
+            }
+
+            if (size != m->GetChannelReverbSize(col) ||
+                amt != m->GetChannelReverbAmt(col)) {
+                m->SetChannelReverbSize(col, (unsigned char)size);
+                m->SetChannelReverbAmt(col, (unsigned char)amt);
+                isDirty_ = true;
+            }
+            if (size == 0) {
+                SetNotification("             Reverb: OFF");
+            } else {
+                char notifBuf[48];
+                sprintf(notifBuf, "      Reverb: sz %d  mix:%02X", size, amt);
+                SetNotification(notifBuf);
+            }
+        } else if (mixerRow_ == 4) {
             // DLY: A+Up/Down = delay time in phrase steps,
             // A+Left/Right = wet mix / feedback amount
             Mixer *m = Mixer::GetInstance();
@@ -575,6 +621,38 @@ void MixerView::DrawView() {
             hex2char(steps, dlyCode);
         }
         DrawString(pos._x, pos._y, dlyCode, props);
+        pos._x += dx;
+    }
+
+    // Row 5: Reverb (room size)
+    pos = anchor;
+    pos._y += 6;
+    if (mixerRow_ == 5) {
+        rowLabelProps.invert_ = true;
+        SetColor(CD_HILITE2);
+    } else {
+        rowLabelProps.invert_ = false;
+        SetColor(CD_NORMAL);
+    }
+    DrawString(pos._x - 5, pos._y, "REV", rowLabelProps);
+
+    pos._x = anchor._x;
+    for (int i = 0; i < 8; i++) {
+        props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 5);
+        SetColor((i == viewData_->mixerCol_ && mixerRow_ == 5) ? CD_HILITE2
+                                                               : CD_NORMAL);
+
+        unsigned char size = mixer->GetChannelReverbSize(i);
+        char revCode[4];
+        if (size == 0) {
+            revCode[0] = '-';
+            revCode[1] = '-';
+            revCode[2] = ' ';
+            revCode[3] = '\0';
+        } else {
+            hex2char(size, revCode);
+        }
+        DrawString(pos._x, pos._y, revCode, props);
         pos._x += dx;
     }
 

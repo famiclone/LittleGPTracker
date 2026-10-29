@@ -67,7 +67,7 @@ tempoNudge_(0)
 	Groove::GetInstance()->Clear() ;
 
 	// Must exist before PersistencyService::Load so the MIXER XML node
-	// (vol/HPF/LPF/delay) is restored; otherwise defaults wipe on reload.
+	// (vol/HPF/LPF/delay/reverb) is restored; otherwise defaults wipe on reload.
 	Mixer::GetInstance()->Clear() ;
 
 	tempoTapCount_=0 ;
