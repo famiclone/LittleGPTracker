@@ -2,6 +2,7 @@
 #include "Application/Utils/wildcard.h"	
 #include "System/Console/Trace.h"
 #include <algorithm>
+#include <stdio.h>
 
 T_SimpleList<Path::Alias> Path::aliases_(true) ;
 
@@ -230,4 +231,16 @@ int FileSystemService::Delete(const Path &path) {
     }
 
     return result;
+}
+
+int FileSystemService::Rename(const Path &src, const Path &dst) {
+    std::string from = src.GetPath();
+    std::string to = dst.GetPath();
+    Trace::Log("FS", "FileSystemService::Rename %s to %s", from.c_str(),
+               to.c_str());
+    if (rename(from.c_str(), to.c_str()) != 0) {
+        Trace::Error("FS Rename failed: %s -> %s", from.c_str(), to.c_str());
+        return -1;
+    }
+    return 0;
 }

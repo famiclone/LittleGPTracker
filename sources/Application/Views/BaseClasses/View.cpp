@@ -112,6 +112,8 @@ void View::drawMap() {
 	        DrawString(pos._x,pos._y,"P",props) ;
 			break;
 		case VT_PROJECT:
+		case VT_SETTINGS:   // stays in Project's gearbox cell
+		case VT_APPEARANCE: // nested under Settings
 	        DrawString(pos._x,pos._y,"P",props) ;
 			break;
 		case VT_INSTRUMENT:

@@ -40,6 +40,8 @@ enum ViewType {
     VT_CHAIN,
     VT_PHRASE,
     VT_PROJECT,
+    VT_SETTINGS,    // Nested under Project; not a gearbox letter
+    VT_APPEARANCE,  // Nested under Settings; not a gearbox letter
     VT_INSTRUMENT,
     VT_TABLE,  // Table screen under phrase
     VT_TABLE2, // Table screen under instrument

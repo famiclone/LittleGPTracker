@@ -261,7 +261,8 @@ COMMONFILES := \
 	RecordSampleDialog.o \
 	SDLAudioCapture.o \
 	MixerView.o NullView.o \
-	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o InstrumentView.o UIController.o \
+	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o SettingsView.o AppearanceView.o InstrumentView.o UIController.o \
+	SelectSchemeDialog.o ColorScheme.o \
 	View.o ModalView.o FieldView.o UIField.o UIIntField.o \
 	UIIntVarOffField.o UIIntVarField.o ViewEvent.o I_Action.o\
 	UITempoField.o UIActionField.o \

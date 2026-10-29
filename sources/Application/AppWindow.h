@@ -10,6 +10,8 @@
 #include "Application/Views/NullView.h"
 #include "Application/Views/PhraseView.h"
 #include "Application/Views/ProjectView.h"
+#include "Application/Views/AppearanceView.h"
+#include "Application/Views/SettingsView.h"
 #include "Application/Views/SongView.h"
 #include "Application/Views/TableView.h"
 #include "Application/Views/ViewData.h"
@@ -27,6 +29,7 @@ class AppWindow : public GUIWindow, I_Observer, Status {
 
   public:
     static AppWindow *Create(GUICreateWindowParams &);
+    static AppWindow *GetInstance();
     void LoadProject(const Path &path);
     void SaveLastProject(const Path &p);
     void CloseProject();
@@ -38,6 +41,10 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     static int CharWidth() { return charWidth_; }
     static int CharHeight() { return charHeight_; }
     void SetDirty();
+
+    static GUIColor GetPaletteColor(ColorDefinition cd);
+    static void SetPaletteColor(ColorDefinition cd, const GUIColor &color);
+    void InvalidatePalette();
 
   protected: // GUIWindow implementation
     virtual bool onEvent(GUIEvent &event);
@@ -70,6 +77,8 @@ class AppWindow : public GUIWindow, I_Observer, Status {
     ChainView *_chainView;
     PhraseView *_phraseView;
     ProjectView *_projectView;
+    SettingsView *_settingsView;
+    AppearanceView *_appearanceView;
     InstrumentView *_instrumentView;
     TableView *_tableView;
     GrooveView *_grooveView;

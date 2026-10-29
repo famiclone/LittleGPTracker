@@ -13,6 +13,7 @@ public:
 	virtual void ProcessArrow(unsigned short mask) {} ;
 	virtual void OnClick() ;
 	const char *GetString() ;
+	void SetName(const char *name) { name_ = name; }
 
 protected:
 	std::string name_ ;

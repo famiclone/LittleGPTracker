@@ -2,14 +2,34 @@
 #include "NewProjectDialog.h"
 #include "Application/Utils/KeyboardLayout.h"
 #include "Application/Utils/RandomNames.h"
+#include <cstring>
+#include <string>
 
 static char *buttonText[BUTTONS_LENGTH] = {(char *)"Random", (char *)"Ok",
                                            (char *)"Cancel"};
 
 #define DIALOG_WIDTH 20
 
-NewProjectDialog::NewProjectDialog(View &view, Path currentPath)
-    : ModalView(view), currentPath_(currentPath) {}
+NewProjectDialog::NewProjectDialog(View &view, Path currentPath,
+                                   const char *editShortName,
+                                   bool useLgptPrefix)
+    : ModalView(view), currentPath_(currentPath),
+      useLgptPrefix_(useLgptPrefix) {
+    memset(initialShort_, 0, sizeof(initialShort_));
+    if (editShortName && editShortName[0]) {
+        strncpy(initialShort_, editShortName, MAX_NAME_LENGTH);
+        if (useLgptPrefix_)
+            allowedExistingName_ = std::string("lgpt_") + initialShort_;
+        else
+            allowedExistingName_ = initialShort_;
+    }
+}
+
+std::string NewProjectDialog::entryNameForCheck(const std::string &fullName) {
+    if (useLgptPrefix_)
+        return fullName;
+    return fullName + ".xml";
+}
 
 NewProjectDialog::~NewProjectDialog() {}
 
@@ -109,6 +129,15 @@ void NewProjectDialog::OnFocus() {
     keyboardMode_ = false;
     keyboardRow_ = 2;
     keyboardCol_ = 0;
+    if (initialShort_[0]) {
+        size_t len = strlen(initialShort_);
+        if (len > MAX_NAME_LENGTH)
+            len = MAX_NAME_LENGTH;
+        memcpy(name_, initialShort_, len);
+        lastChar_ = currentChar_ = (int)len - 1;
+        if (currentChar_ < 0)
+            currentChar_ = 0;
+    }
 };
 
 void NewProjectDialog::ProcessButtonMask(unsigned short mask, bool pressed) {
@@ -206,17 +235,24 @@ void NewProjectDialog::ProcessButtonMask(unsigned short mask, bool pressed) {
                               name_ + sizeof(name_) / sizeof(name_[0]), ' ');
                     strncpy(name_, randomName.c_str(), randomName.length());
                     lastChar_ = currentChar_ = randomName.length() - 1;
-                } while (currentPath_.Descend(GetName()).Exists());
+                } while (currentPath_
+                             .Descend(entryNameForCheck(GetName()))
+                             .Exists() &&
+                         GetName() != allowedExistingName_);
                 isDirty_ = true;
                 break;
-            case 2:
-                if (currentPath_.Descend(GetName()).Exists()) {
+            case 2: {
+                std::string fullName = GetName();
+                if (fullName != allowedExistingName_ &&
+                    currentPath_.Descend(entryNameForCheck(fullName))
+                        .Exists()) {
                     std::string res("Name " + std::string(name_) + " busy");
                     View::SetNotification(res.c_str(), -6);
                 } else {
                     EndModal(1);
                 }
                 break;
+            }
             case 3:
                 EndModal(0);
                 break;
@@ -292,7 +328,10 @@ std::string NewProjectDialog::GetName() {
             break;
         }
     }
-    std::string name = "lgpt_";
-    name += name_;
-	return name;
+    if (useLgptPrefix_) {
+        std::string name = "lgpt_";
+        name += name_;
+        return name;
+    }
+    return std::string(name_);
 }

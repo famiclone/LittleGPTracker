@@ -10,7 +10,10 @@
 
 class NewProjectDialog:public ModalView {
 public:
-  NewProjectDialog(View &view, Path currentPath = "root:");
+  // editShortName: optional leaf without prefix (rename / edit mode)
+  // useLgptPrefix: project folders use "lgpt_"; schemes use bare names
+  NewProjectDialog(View &view, Path currentPath = "root:",
+                   const char *editShortName = 0, bool useLgptPrefix = true);
   virtual ~NewProjectDialog();
 
   virtual void DrawView();
@@ -25,10 +28,14 @@ private:
   int selected_;
   int lastChar_;
   char name_[MAX_NAME_LENGTH + 1];
+  char initialShort_[MAX_NAME_LENGTH + 1];
+  std::string allowedExistingName_;
+  bool useLgptPrefix_;
   int currentChar_;
   bool keyboardMode_;
   int keyboardRow_;
   int keyboardCol_ ;
   void moveCursor(int direction);
+  std::string entryNameForCheck(const std::string &fullName);
 };
 #endif
