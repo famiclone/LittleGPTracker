@@ -9,6 +9,8 @@
 #include "ViewData.h"
 
 #define IVP_TYPE MAKE_FOURCC('I', 'T', 'Y', 'P')
+#define IVP_START_MARKER MAKE_FOURCC('I', 'S', 'T', 'M')
+#define IVP_END_MARKER MAKE_FOURCC('I', 'E', 'N', 'M')
 
 class InstrumentView : public FieldView, public I_Observer {
   public:
@@ -30,11 +32,11 @@ class InstrumentView : public FieldView, public I_Observer {
     void addTypeField();
     void applyTypeChangeIfNeeded();
     void applySlicesUiIfNeeded();
+    void syncSampleRangeFromMarkers();
     void refreshWaveformFieldPosition();
     void drawTypeTabs();
     void drawWaveformPicker();
-    void ensureWaveformCache(short *pcm, int domain, int nCh, int sampleIdx,
-                             int nSlices);
+    void ensureWaveformCache(short *pcm, int nFrames, int nCh, int sampleIdx);
     void clearWaveformStrip(int px, int py, int pw, int ph);
     void drawSampleOverlay(int px, int py, int pw, int ph);
     void drawSynthOverlay(int px, int py, int pw, int ph);
@@ -44,23 +46,30 @@ class InstrumentView : public FieldView, public I_Observer {
     GUIPoint paramAnchor() const;
 
   private:
-    enum { kWaveBins = 48, kWaveStripRows = 5 };
+    enum { kWaveBins = 64, kWaveStripRows = 5 };
 
     Project *project_;
     FourCC lastFocusID_;
     I_Instrument *current_;
     Variable *typeVar_;
+    Variable *startMarkerVar_;
+    Variable *endMarkerVar_;
     int paramBaseY_;
     UIIntVarField *waveField_;
+    UIIntVarField *startMarkerField_;
+    UIIntVarField *endMarkerField_;
+    bool inProcessButton_;
+    bool pendingInstrumentChange_;
 
     unsigned char wavePeak_[kWaveBins];
     int waveCacheSample_;
-    int waveCacheDomain_;
-    int waveCacheSlices_;
+    int waveCacheFrames_;
     bool overlayValid_;
     int overlayDrawnSample_;
-    int overlayDrawnDomain_;
+    int overlayDrawnStart_;
+    int overlayDrawnEnd_;
     int overlayDrawnSlices_;
+    int overlayDrawnFocusMarker_;
     int overlayDrawnSynthKey_;
     signed char synthWaveBin_[kWaveBins];
     signed char synthLfoBin_[kWaveBins];

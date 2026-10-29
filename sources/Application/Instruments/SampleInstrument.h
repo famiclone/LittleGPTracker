@@ -50,6 +50,7 @@ enum SampleInstrumentLoopMode {
 #define SIP_PRINTFX MAKE_FOURCC('P', 'R', 'F', 'X')
 #define SIP_IR_PAD MAKE_FOURCC('I', 'R', 'P', 'D')
 #define SIP_IR_WET MAKE_FOURCC('I', 'R', 'W', 'T')
+#define SIP_REVERSE MAKE_FOURCC('R', 'V', 'R', 'S')
 
 #define FB_BUFFER_LENGTH 3500 // (in samples)
 
@@ -133,6 +134,7 @@ private:
 	   Variable *loopMode_ ;
 	   Variable *slices_ ;
 	   Variable *sliceToEnd_ ;
+	   Variable *reverse_ ;
 	   Variable *interpolation_ ;
        Variable *printFx_;
        Variable *irPad_;

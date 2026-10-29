@@ -23,24 +23,32 @@ void ImportSampleDialogCallback(View &v, ModalView &dialog) {
 }
 
 InstrumentView::InstrumentView(GUIWindow &w, ViewData *data)
-    : FieldView(w, data), paramBaseY_(7), waveField_(0), waveCacheSample_(-1),
-      waveCacheDomain_(-1), waveCacheSlices_(-1), overlayValid_(false),
-      overlayDrawnSample_(-1), overlayDrawnDomain_(-1), overlayDrawnSlices_(-1),
-      overlayDrawnSynthKey_(0) {
+    : FieldView(w, data), paramBaseY_(8), waveField_(0), startMarkerField_(0),
+      endMarkerField_(0), inProcessButton_(false),
+      pendingInstrumentChange_(false), waveCacheSample_(-1),
+      waveCacheFrames_(-1), overlayValid_(false), overlayDrawnSample_(-1),
+      overlayDrawnStart_(-1), overlayDrawnEnd_(-1), overlayDrawnSlices_(-1),
+      overlayDrawnFocusMarker_(0), overlayDrawnSynthKey_(0) {
 
     project_ = data->project_;
     lastFocusID_ = 0;
     current_ = 0;
-    // Plain Variable (not Watched): type switch must run after ProcessArrow
-    // returns, otherwise Empty() deletes the field still on the stack.
+    // Plain Variables (not Watched): rebuilding UI inside a WatchedVariable
+    // notify would delete the active UIField still on the stack.
     typeVar_ = new Variable("type", IVP_TYPE, instrumentTypeNames, 2, 0);
+    startMarkerVar_ = new Variable("startMarker", IVP_START_MARKER, 0);
+    endMarkerVar_ = new Variable("endMarker", IVP_END_MARKER, 0);
     onInstrumentChange();
 }
 
-InstrumentView::~InstrumentView() { delete typeVar_; }
+InstrumentView::~InstrumentView() {
+    delete typeVar_;
+    delete startMarkerVar_;
+    delete endMarkerVar_;
+}
 
 GUIPoint InstrumentView::paramAnchor() const {
-    // Leave title + waveform strip at the top (matches reference layout).
+    // Leave title + waveform strip + triangle handles at the top.
     return GUIPoint(1, paramBaseY_);
 }
 
@@ -55,6 +63,8 @@ void InstrumentView::onInstrumentChange() {
 
     ClearFocus();
     waveField_ = 0;
+    startMarkerField_ = 0;
+    endMarkerField_ = 0;
     overlayValid_ = false;
 
     I_Instrument *old = current_;
@@ -130,6 +140,7 @@ void InstrumentView::applyTypeChangeIfNeeded() {
     }
     bank->SetInstrumentType(i, want);
     onInstrumentChange();
+    ((AppWindow &)w_).Clear(true);
     isDirty_ = true;
 }
 
@@ -160,6 +171,71 @@ void InstrumentView::applySlicesUiIfNeeded() {
     }
 }
 
+void InstrumentView::syncSampleRangeFromMarkers() {
+    if (getInstrumentType() != IT_SAMPLE || !current_) {
+        return;
+    }
+    SampleInstrument *si = (SampleInstrument *)current_;
+    int nFrames = si->GetSampleSize();
+    if (nFrames <= 0) {
+        return;
+    }
+    Variable *startVar = si->FindVariable(SIP_START);
+    Variable *loopStartVar = si->FindVariable(SIP_LOOPSTART);
+    Variable *endVar = si->FindVariable(SIP_END);
+    if (!startVar || !loopStartVar || !endVar) {
+        return;
+    }
+
+    int curStart = startVar->GetInt();
+    int curEnd = endVar->GetInt();
+    if (curEnd <= 0 || curEnd > nFrames) {
+        curEnd = nFrames;
+    }
+    if (curStart < 0) {
+        curStart = 0;
+    }
+    if (curStart >= curEnd) {
+        curStart = curEnd > 1 ? curEnd - 1 : 0;
+    }
+
+    int wantStart = startMarkerVar_->GetInt();
+    int wantEnd = endMarkerVar_->GetInt();
+
+    UIField *focus = GetFocus();
+    if (focus == startMarkerField_) {
+        if (wantStart < 0) {
+            wantStart = 0;
+        }
+        if (wantStart >= curEnd) {
+            wantStart = curEnd > 1 ? curEnd - 1 : 0;
+        }
+        startMarkerVar_->SetInt(wantStart, false);
+        if (wantStart != curStart || loopStartVar->GetInt() != wantStart) {
+            startVar->SetInt(wantStart, false);
+            loopStartVar->SetInt(wantStart, false);
+            overlayValid_ = false;
+            isDirty_ = true;
+        }
+    } else if (focus == endMarkerField_) {
+        if (wantEnd <= curStart) {
+            wantEnd = curStart + 1;
+        }
+        if (wantEnd > nFrames) {
+            wantEnd = nFrames;
+        }
+        endMarkerVar_->SetInt(wantEnd, false);
+        if (wantEnd != curEnd) {
+            endVar->SetInt(wantEnd, false);
+            overlayValid_ = false;
+            isDirty_ = true;
+        }
+    } else {
+        startMarkerVar_->SetInt(curStart, false);
+        endMarkerVar_->SetInt(curEnd, false);
+    }
+}
+
 void InstrumentView::addTypeField() {
     // Title-bar tabs: "synth" / "sample" on the right of Instrument XX.
     GUIPoint position(26, 0);
@@ -183,7 +259,7 @@ void InstrumentView::refreshWaveformFieldPosition() {
     if (wave >= SYW_LAST) {
         wave = SYW_LAST - 1;
     }
-    GUIPoint p(22, paramBaseY_ + wave);
+    GUIPoint p(18, paramBaseY_ + wave);
     waveField_->SetPosition(p);
 }
 
@@ -197,6 +273,53 @@ void InstrumentView::fillSampleParameters() {
 
     addTypeField();
 
+    int sampleSize = instrument->GetSampleSize();
+    if (sampleSize < 1) {
+        sampleSize = 1;
+    }
+    Variable *startVar = instrument->FindVariable(SIP_START);
+    Variable *loopStartVar = instrument->FindVariable(SIP_LOOPSTART);
+    Variable *endVar = instrument->FindVariable(SIP_END);
+    int curStart = startVar ? startVar->GetInt() : 0;
+    int curEnd = endVar ? endVar->GetInt() : sampleSize;
+    if (curEnd <= 0 || curEnd > sampleSize) {
+        curEnd = sampleSize;
+    }
+    if (curStart < 0) {
+        curStart = 0;
+    }
+    if (curStart >= curEnd) {
+        curStart = curEnd > 1 ? curEnd - 1 : 0;
+    }
+    if (loopStartVar && loopStartVar->GetInt() == 0 && curStart > 0) {
+        loopStartVar->SetInt(curStart, false);
+    }
+    startMarkerVar_->SetInt(curStart, false);
+    endMarkerVar_->SetInt(curEnd, false);
+
+    int fineStep = sampleSize / 128;
+    if (fineStep < 1) {
+        fineStep = 1;
+    }
+    int coarseStep = sampleSize / 16;
+    if (coarseStep < 1) {
+        coarseStep = 1;
+    }
+
+    // Two interactive triangle handles on the bottom edge of the waveform strip
+    // (row 6: between the title tabs at row 0 and "sample:" at row 8).
+    GUIPoint startHandlePos(1, paramBaseY_ - 2);
+    startMarkerField_ = new UIIntVarField(
+        startHandlePos, *startMarkerVar_, "", 0, sampleSize - 1, fineStep,
+        coarseStep);
+    T_SimpleList<UIField>::Insert(startMarkerField_);
+
+    GUIPoint endHandlePos(20, paramBaseY_ - 2);
+    endMarkerField_ = new UIIntVarField(endHandlePos, *endMarkerVar_, "", 1,
+                                        sampleSize, fineStep, coarseStep);
+    T_SimpleList<UIField>::Insert(endMarkerField_);
+
+    // Row 8: sample: <name>
     Variable *v = instrument->FindVariable(SIP_SAMPLE);
     SamplePool *sp = SamplePool::GetInstance();
     int sampleMax = sp->GetNameListSize() - 1;
@@ -207,60 +330,72 @@ void InstrumentView::fillSampleParameters() {
         new UIIntVarField(position, *v, "sample: %s", 0, sampleMax, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
 
-    position._y += 1;
 #ifdef FFMPEG_ENABLED
+    // Row 9: <preset> wet:<n>%   pad:<n>ms
+    position._y += 1;
     v = instrument->FindVariable(SIP_PRINTFX);
     f1 = new UIIntVarField(position, *v, "%s", 0, 3, 1, 2);
     T_SimpleList<UIField>::Insert(f1);
 
-    position._x += 7;
+    position._x = 8;
     v = instrument->FindVariable(SIP_IR_WET);
-    f1 = new UIIntVarField(position, *v, "wet: %d%%", 0, 100, 1, 10);
+    f1 = new UIIntVarField(position, *v, "wet:%d%%", 0, 100, 1, 10);
     T_SimpleList<UIField>::Insert(f1);
-    position._x -= 7;
 
-    position._y += 1;
+    position._x = 18;
     v = instrument->FindVariable(SIP_IR_PAD);
-    f1 = new UIIntVarField(position, *v, "pad: %dms", 0, 5000, 5, 100);
+    f1 = new UIIntVarField(position, *v, "pad:%dms", 0, 5000, 5, 100);
     T_SimpleList<UIField>::Insert(f1);
+    position._x = 1;
 #endif
 
-    position._y += 1;
+    // Row 10: blank
+    // Row 11: crush: <n> drive: <hex>
+    position._y += 2;
     v = instrument->FindVariable(SIP_CRUSH);
     f1 = new UIIntVarField(position, *v, "crush: %d", 1, 0x10, 1, 4);
     T_SimpleList<UIField>::Insert(f1);
 
-    position._y += 1;
+    position._x = 11;
     v = instrument->FindVariable(SIP_CRUSHVOL);
     f1 = new UIIntVarField(position, *v, "drive: %2.2X", 0, 0xFF, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
+    position._x = 1;
 
+    // Row 12: downsample: <n>
     position._y += 1;
     v = instrument->FindVariable(SIP_DOWNSMPL);
     f1 = new UIIntVarField(position, *v, "downsample: %d", 0, 8, 1, 4);
     T_SimpleList<UIField>::Insert(f1);
 
-    position._y += 1;
+    // Row 13: blank
+    // Row 14: volume: <dec> [<hex>]
+    position._y += 2;
     v = instrument->FindVariable(SIP_VOLUME);
     f1 = new UIIntVarField(position, *v, "volume: %d [%2.2X]", 0, 255, 1, 10);
     T_SimpleList<UIField>::Insert(f1);
 
+    // Row 15: pan: <hex>
     position._y += 1;
     v = instrument->FindVariable(SIP_PAN);
     f1 = new UIIntVarField(position, *v, "pan: %2.2X", 0, 0xFE, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
 
+    // Row 16: root note: <note>
     position._y += 1;
     v = instrument->FindVariable(SIP_ROOTNOTE);
     f1 = new UINoteVarField(position, *v, "root note: %s", 0, 0x7F, 1, 0x0C);
     T_SimpleList<UIField>::Insert(f1);
 
+    // Row 17: detune: <hex>
     position._y += 1;
     v = instrument->FindVariable(SIP_FINETUNE);
     f1 = new UIIntVarField(position, *v, "detune: %2.2X", 0, 255, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
 
-    position._y += 1;
+    // Row 18: blank
+    // Row 19: flt cut/res: <hex> <hex>
+    position._y += 2;
     UIStaticField *sf = new UIStaticField(position, "flt cut/res:");
     T_SimpleList<UIField>::Insert(sf);
 
@@ -275,22 +410,26 @@ void InstrumentView::fillSampleParameters() {
     T_SimpleList<UIField>::Insert(f1);
     position._x -= 16;
 
+    // Row 20: type: <hex>
     position._y += 1;
     v = instrument->FindVariable(SIP_FILTMIX);
     f1 = new UIIntVarField(position, *v, "type: %2.2X", 0, 0xFF, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
 
+    // Row 21: Mode: <mode>
     position._y += 1;
     v = instrument->FindVariable(SIP_FILTMODE);
     f1 = new UIIntVarField(position, *v, "Mode: %s", 0, 2, 1, 1);
     T_SimpleList<UIField>::Insert(f1);
 
+    // Row 22: attenuate: <dec> [<hex>]
     position._y += 1;
     v = instrument->FindVariable(SIP_ATTENUATE);
     f1 = new UIIntVarField(position, *v, "attenuate: %d [%2.2X]", 1, 0xFF, 1,
                            0x10);
     T_SimpleList<UIField>::Insert(f1);
 
+    // Row 23: fb tune/mix: <hex> <hex>
     position._y += 1;
     sf = new UIStaticField(position, "fb tune/mix: ");
     T_SimpleList<UIField>::Insert(sf);
@@ -304,64 +443,43 @@ void InstrumentView::fillSampleParameters() {
     v = instrument->FindVariable(SIP_FBMIX);
     f1 = new UIIntVarField(position, *v, "%2.2X", 0, 0xFF, 1, 0X10);
     T_SimpleList<UIField>::Insert(f1);
-
     position._x -= 16;
 
-    position._y += 1;
+    // Row 24: blank
+    // Row 25: interpolation: <type>
+    position._y += 2;
     v = instrument->FindVariable(SIP_INTERPOLATION);
     f1 = new UIIntVarField(position, *v, "interpolation: %s", 0, 1, 1, 1);
     T_SimpleList<UIField>::Insert(f1);
 
+    // Row 26: loop mode: <mode>
     position._y += 1;
     v = instrument->FindVariable(SIP_LOOPMODE);
     f1 = new UIIntVarField(position, *v, "loop mode: %s", 0, SILM_LAST - 1, 1,
                            1);
     T_SimpleList<UIField>::Insert(f1);
 
+    // Row 27: slices: <n>
     position._y += 1;
     v = instrument->FindVariable(SIP_SLICES);
     f1 = new UIIntVarField(position, *v, "slices: %d", 1, 0xFF, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
 
     if (v->GetInt() > 1) {
-        position._y += 1;
+        position._x = 14;
         v = instrument->FindVariable(SIP_SLICETOEND);
         f1 = new UIIntVarField(position, *v, "to end: %s", 0, 1, 1, 1);
         T_SimpleList<UIField>::Insert(f1);
+        position._x = 1;
     }
 
-    int sampleEnd = instrument->GetSampleSize() - 1;
-    if (sampleEnd < 0) {
-        sampleEnd = 0;
+    // Row 28: reverse: <off|on>
+    position._y += 1;
+    v = instrument->FindVariable(SIP_REVERSE);
+    if (v) {
+        f1 = new UIIntVarField(position, *v, "reverse: %s", 0, 1, 1, 1);
+        T_SimpleList<UIField>::Insert(f1);
     }
-
-    position._y += 1;
-    v = instrument->FindVariable(SIP_START);
-    f1 = new UIBigHexVarField(position, *v, 7, "start: %7.7X", 0, sampleEnd, 16);
-    T_SimpleList<UIField>::Insert(f1);
-
-    position._y += 1;
-    v = instrument->FindVariable(SIP_LOOPSTART);
-    f1 = new UIBigHexVarField(position, *v, 7, "loop start: %7.7X", 0, sampleEnd,
-                              16);
-    T_SimpleList<UIField>::Insert(f1);
-
-    position._y += 1;
-    v = instrument->FindVariable(SIP_END);
-    f1 = new UIBigHexVarField(position, *v, 7, "loop end: %7.7X", 0, sampleEnd,
-                              16);
-    T_SimpleList<UIField>::Insert(f1);
-
-    v = instrument->FindVariable(SIP_TABLEAUTO);
-    position._y += 1;
-    UIIntVarField *f2 =
-        new UIIntVarField(position, *v, "automation: %s", 0, 1, 1, 1);
-    T_SimpleList<UIField>::Insert(f2);
-
-    position._y += 1;
-    v = instrument->FindVariable(SIP_TABLE);
-    f1 = new UIIntVarOffField(position, *v, "table: %2.2X", 0x00, 0x7F, 1, 0x10);
-    T_SimpleList<UIField>::Insert(f1);
 };
 
 void InstrumentView::fillMidiParameters() {
@@ -410,7 +528,7 @@ void InstrumentView::fillSynthParameters() {
 
     addTypeField();
 
-    // Left column: ADSR + LFO
+    // Left column (rows 8..11): ADSR
     Variable *v = instrument->FindVariable(SYP_ATTACK);
     UIIntVarField *f1 =
         new UIIntVarField(position, *v, "attack: %2.2X", 0, 0xFF, 1, 0x10);
@@ -431,7 +549,23 @@ void InstrumentView::fillSynthParameters() {
     f1 = new UIIntVarField(position, *v, "release: %2.2X", 0, 0xFF, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
 
-    position._y += 2;
+    // Right column (rows 8..12, x = 18): waveform list
+    v = instrument->FindVariable(SYP_WAVEFORM);
+    int wave = v->GetInt();
+    if (wave < 0) {
+        wave = 0;
+    }
+    if (wave >= SYW_LAST) {
+        wave = SYW_LAST - 1;
+    }
+    GUIPoint wavePos(18, paramBaseY_ + wave);
+    waveField_ =
+        new UIIntVarField(wavePos, *v, "%s", 0, SYW_LAST - 1, 1, 1);
+    T_SimpleList<UIField>::Insert(waveField_);
+
+    // Rows 14..15: LFO
+    position._y = paramBaseY_ + 6;
+    position._x = 1;
     v = instrument->FindVariable(SYP_LFORATE);
     f1 = new UIIntVarField(position, *v, "lfo rate: %2.2X", 0, 0xFF, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
@@ -441,22 +575,8 @@ void InstrumentView::fillSynthParameters() {
     f1 = new UIIntVarField(position, *v, "lfo depth: %2.2X", 0, 0xFF, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
 
-    // Right column: waveform list (field tracks selected row).
-    v = instrument->FindVariable(SYP_WAVEFORM);
-    int wave = v->GetInt();
-    if (wave < 0) {
-        wave = 0;
-    }
-    if (wave >= SYW_LAST) {
-        wave = SYW_LAST - 1;
-    }
-    GUIPoint wavePos(22, paramBaseY_ + wave);
-    waveField_ =
-        new UIIntVarField(wavePos, *v, "%s", 0, SYW_LAST - 1, 1, 1);
-    T_SimpleList<UIField>::Insert(waveField_);
-
-    // Bottom: volume / pan / root / detune / automation / table
-    position._y = paramBaseY_ + 8;
+    // Rows 18..21: volume / pan / root / detune
+    position._y = paramBaseY_ + 10;
     position._x = 1;
     v = instrument->FindVariable(SYP_VOLUME);
     f1 = new UIIntVarField(position, *v, "volume: %d [%2.2X]", 0, 255, 1, 10);
@@ -477,8 +597,9 @@ void InstrumentView::fillSynthParameters() {
     f1 = new UIIntVarField(position, *v, "detune: %2.2X", 0, 255, 1, 0x10);
     T_SimpleList<UIField>::Insert(f1);
 
+    // Rows 24..25: automation / table
+    position._y = paramBaseY_ + 16;
     v = instrument->FindVariable(SYP_TABLEAUTO);
-    position._y += 2;
     UIIntVarField *f2 =
         new UIIntVarField(position, *v, "automation: %s", 0, 1, 1, 1);
     T_SimpleList<UIField>::Insert(f2);
@@ -499,6 +620,7 @@ void InstrumentView::warpToNext(int offset) {
     };
     viewData_->currentInstrument_ = instrument;
     onInstrumentChange();
+    ((AppWindow &)w_).Clear(true);
     isDirty_ = true;
 };
 
@@ -572,13 +694,20 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
         viewMode_ = VM_NORMAL;
     }
 
+    inProcessButton_ = true;
     FieldView::ProcessButtonMask(mask);
+    inProcessButton_ = false;
+    if (pendingInstrumentChange_) {
+        pendingInstrumentChange_ = false;
+        onInstrumentChange();
+        isDirty_ = true;
+    }
     refreshWaveformFieldPosition();
 
-    // Re-type / rebuild only after the field ProcessArrow has returned;
-    // rebuilding inside a WatchedVariable notify would delete the active UIField.
+    // Re-type / rebuild / sync sample markers after ProcessArrow has returned.
     applyTypeChangeIfNeeded();
     applySlicesUiIfNeeded();
+    syncSampleRangeFromMarkers();
 
     Player *player = Player::GetInstance();
     // B Modifier
@@ -601,25 +730,20 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
                         viewData_->project_->GetInstrumentBank();
                     I_Instrument *instr = bank->GetInstrument(i);
                     instr->Purge();
+                    onInstrumentChange();
                     isDirty_ = true;
                 }
             }
 
             // Check if on table
-            if (GetFocus() == T_SimpleList<UIField>::GetLast()) {
-                int i = viewData_->currentInstrument_;
-                InstrumentBank *bank =
-                    viewData_->project_->GetInstrumentBank();
-                I_Instrument *instr = bank->GetInstrument(i);
-                Variable *v = instr->FindVariable(SIP_TABLE);
-                if (!v) {
-                    v = instr->FindVariable(SYP_TABLE);
-                }
-                if (v) {
-                    v->SetInt(-1);
+            UIIntVarField *focus = (UIIntVarField *)GetFocus();
+            if (focus && !focus->IsStatic()) {
+                FourCC fid = focus->GetVariableID();
+                if (fid == SIP_TABLE || fid == SYP_TABLE || fid == MIP_TABLE) {
+                    focus->GetVariable().SetInt(-1);
                     isDirty_ = true;
                 }
-            };
+            }
         }
         if (mask & EPBM_L) {
             viewMode_ = VM_CLONE;
@@ -629,11 +753,14 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
         // A modifier
 
         if (mask == EPBM_A) {
-            FourCC varID = ((UIIntVarField *)GetFocus())->GetVariableID();
-            if ((varID == SIP_TABLE) || (varID == MIP_TABLE) ||
-                (varID == SYP_TABLE) || (varID == SIP_SAMPLE) ||
-                (varID == SIP_PRINTFX)) {
-                viewMode_ = VM_NEW;
+            UIIntVarField *focus = (UIIntVarField *)GetFocus();
+            if (focus && !focus->IsStatic()) {
+                FourCC varID = focus->GetVariableID();
+                if ((varID == SIP_TABLE) || (varID == MIP_TABLE) ||
+                    (varID == SYP_TABLE) || (varID == SIP_SAMPLE) ||
+                    (varID == SIP_PRINTFX)) {
+                    viewMode_ = VM_NEW;
+                }
             }
         } else {
 
@@ -679,7 +806,7 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
     }
 
     UIIntVarField *field = (UIIntVarField *)GetFocus();
-    if (field) {
+    if (field && !field->IsStatic()) {
         lastFocusID_ = field->GetVariableID();
     }
 };
@@ -688,10 +815,14 @@ void InstrumentView::drawTypeTabs() {
     GUITextProperties props;
     InstrumentType it = getInstrumentType();
 
-    // Overwrite the raw "%s" type field with both tab labels.
+    // Overwrite the raw "%s" type field with both tab labels ("synth" + space + "sample").
     props.invert_ = (it == IT_SYNTH);
     SetColor(props.invert_ ? CD_HILITE2 : CD_NORMAL);
-    DrawString(26, 0, "synth ", props);
+    DrawString(26, 0, "synth", props);
+
+    props.invert_ = false;
+    SetColor(CD_NORMAL);
+    DrawString(31, 0, " ", props);
 
     props.invert_ = (it == IT_SAMPLE);
     SetColor(props.invert_ ? CD_HILITE2 : CD_NORMAL);
@@ -711,33 +842,29 @@ void InstrumentView::drawWaveformPicker() {
     int wave = v->GetInt();
     GUITextProperties props;
     for (int i = 0; i < SYW_LAST; i++) {
-        // Selected row is drawn by the focused UIIntVarField; paint the rest.
-        if (i == wave) {
-            continue;
-        }
-        props.invert_ = false;
-        SetColor(CD_NORMAL);
-        DrawString(22, paramBaseY_ + i, synthWaveNames[i], props);
+        // Always highlight the active waveform in pink (matches reference).
+        props.invert_ = (i == wave);
+        SetColor(props.invert_ ? CD_HILITE2 : CD_NORMAL);
+        DrawString(18, paramBaseY_ + i, synthWaveNames[i], props);
     }
+    SetColor(CD_NORMAL);
 }
 
-void InstrumentView::ensureWaveformCache(short *pcm, int domain, int nCh,
-                                         int sampleIdx, int nSlices) {
-    if (waveCacheSample_ == sampleIdx && waveCacheDomain_ == domain &&
-        waveCacheSlices_ == nSlices) {
+void InstrumentView::ensureWaveformCache(short *pcm, int nFrames, int nCh,
+                                         int sampleIdx) {
+    if (waveCacheSample_ == sampleIdx && waveCacheFrames_ == nFrames) {
         return;
     }
     waveCacheSample_ = sampleIdx;
-    waveCacheDomain_ = domain;
-    waveCacheSlices_ = nSlices;
+    waveCacheFrames_ = nFrames;
     for (int b = 0; b < kWaveBins; b++) {
-        int start = (int)((long)b * domain / kWaveBins);
-        int end = (int)((long)(b + 1) * domain / kWaveBins);
+        int start = (int)((long)b * nFrames / kWaveBins);
+        int end = (int)((long)(b + 1) * nFrames / kWaveBins);
         if (end <= start) {
             end = start + 1;
         }
-        if (end > domain) {
-            end = domain;
+        if (end > nFrames) {
+            end = nFrames;
         }
         int peak = 0;
         int stride = ((end - start) / 48) + 1;
@@ -792,15 +919,34 @@ void InstrumentView::clearWaveformStrip(int px, int py, int pw, int ph) {
         return;
     }
     AppWindow &aw = (AppWindow &)w_;
-    GUIRect strip(px - 2, py, px + pw + 2, py + ph);
+    GUIRect strip(px - 6, py, px + pw + 6, py + ph + 6);
     aw.BeginBatchDraw();
     aw.FillRect(strip, CD_BACKGROUND);
     aw.EndBatchDraw(strip);
     overlayValid_ = true;
     overlayDrawnSample_ = -3;
-    overlayDrawnDomain_ = -1;
+    overlayDrawnStart_ = -1;
+    overlayDrawnEnd_ = -1;
     overlayDrawnSlices_ = -1;
+    overlayDrawnFocusMarker_ = 0;
     overlayDrawnSynthKey_ = 0;
+}
+
+static void drawTriangleHandle(AppWindow &aw, int cx, int topY, bool focused) {
+    // Upward-pointing triangle handle (▲) under the vertical white line.
+    ColorDefinition fillCol = focused ? CD_NORMAL : CD_BORDER;
+    for (int row = 0; row < 6; row++) {
+        int half = row + 1;
+        GUIRect r(cx - half, topY + row, cx + half, topY + row + 1);
+        aw.FillRect(r, fillCol);
+    }
+    if (focused) {
+        for (int row = 2; row < 5; row++) {
+            int half = row - 1;
+            GUIRect inner(cx - half, topY + row, cx + half, topY + row + 1);
+            aw.FillRect(inner, CD_BORDER);
+        }
+    }
 }
 
 void InstrumentView::drawSampleOverlay(int px, int py, int pw, int ph) {
@@ -830,9 +976,18 @@ void InstrumentView::drawSampleOverlay(int px, int py, int pw, int ph) {
         return;
     }
 
-    int domain = si->GetLoopEnd();
-    if (domain <= 0 || domain > nFrames) {
-        domain = nFrames;
+    Variable *startVar = si->FindVariable(SIP_START);
+    Variable *endVar = si->FindVariable(SIP_END);
+    int startFrame = startVar ? startVar->GetInt() : 0;
+    int endFrame = endVar ? endVar->GetInt() : nFrames;
+    if (endFrame <= 0 || endFrame > nFrames) {
+        endFrame = nFrames;
+    }
+    if (startFrame < 0) {
+        startFrame = 0;
+    }
+    if (startFrame >= endFrame) {
+        startFrame = endFrame > 1 ? endFrame - 1 : 0;
     }
 
     Variable *slicesVar = si->FindVariable(SIP_SLICES);
@@ -841,25 +996,57 @@ void InstrumentView::drawSampleOverlay(int px, int py, int pw, int ph) {
         nSlices = 1;
     }
 
+    UIField *focus = GetFocus();
+    int focusMarker = (focus == startMarkerField_) ? 1
+                      : (focus == endMarkerField_) ? 2
+                                                   : 0;
+
     if (overlayValid_ && overlayDrawnSample_ == sampleIdx &&
-        overlayDrawnDomain_ == domain && overlayDrawnSlices_ == nSlices &&
+        overlayDrawnStart_ == startFrame && overlayDrawnEnd_ == endFrame &&
+        overlayDrawnSlices_ == nSlices &&
+        overlayDrawnFocusMarker_ == focusMarker &&
         overlayDrawnSynthKey_ == 0) {
         return;
     }
 
-    ensureWaveformCache(pcm, domain, nCh, sampleIdx, nSlices);
+    ensureWaveformCache(pcm, nFrames, nCh, sampleIdx);
 
-    GUIRect stripDirty(px - 2, py, px + pw + 2, py + ph);
+    int selX0 = px + (int)((long)startFrame * pw / nFrames);
+    int selX1 = px + (int)((long)endFrame * pw / nFrames);
+    if (selX0 < px)
+        selX0 = px;
+    if (selX1 > px + pw)
+        selX1 = px + pw;
+    if (selX1 <= selX0)
+        selX1 = selX0 + 1;
+
+    GUIRect stripDirty(px - 6, py, px + pw + 6, py + ph + 6);
     aw.BeginBatchDraw();
 
     aw.FillRect(stripDirty, CD_BACKGROUND);
+
+    // Outer side rails: dimmed when the active segment is inset from the edges.
     GUIRect leftRail(px - 2, py, px, py + ph);
     GUIRect rightRail(px + pw, py, px + pw + 2, py + ph);
-    aw.FillRect(leftRail, CD_BORDER);
-    aw.FillRect(rightRail, CD_BORDER);
+    aw.FillRect(leftRail, (selX0 <= px) ? CD_BORDER : CD_SONGVIEW00);
+    aw.FillRect(rightRail, (selX1 >= px + pw) ? CD_BORDER : CD_SONGVIEW00);
 
     const int midY = py + ph / 2;
     const int maxAmp = ph / 2 - 1;
+
+    // Horizontal center baseline: dimmed outside [selX0, selX1], bright inside.
+    if (selX0 > px) {
+        GUIRect midLeft(px, midY - 1, selX0, midY + 1);
+        aw.FillRect(midLeft, CD_SONGVIEW00);
+    }
+    GUIRect midActive(selX0, midY - 1, selX1, midY + 1);
+    aw.FillRect(midActive, CD_HILITE1);
+    if (selX1 < px + pw) {
+        GUIRect midRight(selX1, midY - 1, px + pw, midY + 1);
+        aw.FillRect(midRight, CD_SONGVIEW00);
+    }
+
+    // Waveform columns: bright inside [selX0, selX1], dimmed outside.
     for (int b = 0; b < kWaveBins; b++) {
         int x0 = px + (int)((long)b * pw / kWaveBins);
         int x1 = px + (int)((long)(b + 1) * pw / kWaveBins);
@@ -873,50 +1060,47 @@ void InstrumentView::drawSampleOverlay(int px, int py, int pw, int ph) {
         if (amp <= 0) {
             continue;
         }
+        int midBin = (x0 + x1) / 2;
+        ColorDefinition col =
+            (midBin >= selX0 && midBin < selX1) ? CD_HILITE1 : CD_SONGVIEW00;
         GUIRect column(x0, midY - amp, x1, midY + amp + 1);
-        aw.FillRect(column, CD_HILITE1);
+        aw.FillRect(column, col);
     }
 
+    // Slice division lines inside the selected [selX0, selX1] segment.
     if (nSlices > 1) {
+        int selW = selX1 - selX0;
+        if (selW < 1) {
+            selW = 1;
+        }
         for (int s = 1; s < nSlices; s++) {
-            int mx = px + (int)((long)s * pw / nSlices);
+            int mx = selX0 + (int)((long)s * selW / nSlices);
             GUIRect marker(mx, py, mx + 1, py + ph);
             aw.FillRect(marker, CD_BORDER);
         }
     }
 
-    // Loop region markers (triangles ≈ tip bars at start/end).
-    Variable *loopStart = si->FindVariable(SIP_LOOPSTART);
-    Variable *loopEnd = si->FindVariable(SIP_END);
-    if (loopStart && loopEnd && domain > 0) {
-        int ls = loopStart->GetInt();
-        int le = loopEnd->GetInt();
-        if (ls < 0)
-            ls = 0;
-        if (le > domain)
-            le = domain;
-        if (le > ls) {
-            int x0 = px + (int)((long)ls * pw / domain);
-            int x1 = px + (int)((long)le * pw / domain);
-            GUIRect tip0(x0, py, x0 + 2, py + 2);
-            GUIRect tip1(x1 - 2, py, x1, py + 2);
-            aw.FillRect(tip0, CD_PLAY);
-            aw.FillRect(tip1, CD_PLAY);
-            GUIRect box(x0, py, x1, py + ph);
-            // Light outline via top/bottom edges
-            GUIRect top(x0, py, x1, py + 1);
-            GUIRect bot(x0, py + ph - 1, x1, py + ph);
-            aw.FillRect(top, CD_NORMAL);
-            aw.FillRect(bot, CD_NORMAL);
-        }
-    }
+    // White active-segment bracket: left vertical bar, right vertical bar,
+    // and bottom connecting horizontal bar.
+    GUIRect startBar(selX0 - 1, py, selX0 + 1, py + ph);
+    GUIRect endBar(selX1 - 1, py, selX1 + 1, py + ph);
+    GUIRect bottomBar(selX0 - 1, py + ph - 2, selX1 + 1, py + ph);
+    aw.FillRect(startBar, CD_NORMAL);
+    aw.FillRect(endBar, CD_NORMAL);
+    aw.FillRect(bottomBar, CD_NORMAL);
+
+    // Two triangle handles (▲) under the white start and end bars.
+    drawTriangleHandle(aw, selX0, py + ph - 1, focusMarker == 1);
+    drawTriangleHandle(aw, selX1, py + ph - 1, focusMarker == 2);
 
     aw.EndBatchDraw(stripDirty);
 
     overlayValid_ = true;
     overlayDrawnSample_ = sampleIdx;
-    overlayDrawnDomain_ = domain;
+    overlayDrawnStart_ = startFrame;
+    overlayDrawnEnd_ = endFrame;
     overlayDrawnSlices_ = nSlices;
+    overlayDrawnFocusMarker_ = focusMarker;
     overlayDrawnSynthKey_ = 0;
 }
 
@@ -936,7 +1120,7 @@ void InstrumentView::drawSynthOverlay(int px, int py, int pw, int ph) {
 
     sy->FillPhrasePreview(synthWaveBin_, synthLfoBin_, kWaveBins);
 
-    GUIRect stripDirty(px - 2, py, px + pw + 2, py + ph);
+    GUIRect stripDirty(px - 6, py, px + pw + 6, py + ph + 6);
     aw.BeginBatchDraw();
 
     aw.FillRect(stripDirty, CD_BACKGROUND);
@@ -1032,8 +1216,10 @@ void InstrumentView::drawSynthOverlay(int px, int py, int pw, int ph) {
 
     overlayValid_ = true;
     overlayDrawnSample_ = -2;
-    overlayDrawnDomain_ = -1;
+    overlayDrawnStart_ = -1;
+    overlayDrawnEnd_ = -1;
     overlayDrawnSlices_ = -1;
+    overlayDrawnFocusMarker_ = 0;
     overlayDrawnSynthKey_ = key;
 }
 
@@ -1042,9 +1228,6 @@ void InstrumentView::DrawOverlay() {
         return;
     }
 
-    // Do not draw pixel overlay (or FillRect over the dialog) while a modal
-    // is active; DoModal/EndModal invalidate the char cache so Flush repaints
-    // the background and dialog cleanly.
     if (HasModal()) {
         overlayValid_ = false;
         return;
@@ -1053,7 +1236,7 @@ void InstrumentView::DrawOverlay() {
     const int cw = AppWindow::CharWidth();
     const int ch = AppWindow::CharHeight();
     const int px = 1 * cw;
-    const int py = 1 * ch;
+    const int py = 2 * ch;
     const int pw = 38 * cw;
     const int ph = kWaveStripRows * ch;
 
@@ -1078,20 +1261,21 @@ void InstrumentView::DrawView() {
 
     GUITextProperties props;
     GUIPoint pos = GetTitlePosition();
+    pos._x = 1;
 
     char title[20];
     SetColor(CD_NORMAL);
     sprintf(title, "Instrument %2.2X", viewData_->currentInstrument_);
     DrawString(pos._x, pos._y, title, props);
 
-    // Reserve blank rows under the title for the pixel waveform strip.
+    // Reserve blank rows under the title for the pixel waveform strip + handles.
     if (!View::miniLayout_) {
         SetColor(CD_BACKGROUND);
         props.invert_ = false;
         char blank[40];
         memset(blank, ' ', 38);
         blank[38] = 0;
-        for (int r = 1; r <= kWaveStripRows; r++) {
+        for (int r = 1; r < paramBaseY_; r++) {
             DrawString(1, r, blank, props);
         }
         SetColor(CD_NORMAL);
@@ -1107,5 +1291,9 @@ void InstrumentView::OnFocus() { onInstrumentChange(); }
 void InstrumentView::Update(Observable &o, I_ObservableData *d) {
     (void)o;
     (void)d;
+    if (inProcessButton_) {
+        pendingInstrumentChange_ = true;
+        return;
+    }
     onInstrumentChange();
 }

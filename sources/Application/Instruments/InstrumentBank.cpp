@@ -298,11 +298,11 @@ bool InstrumentBank::SetInstrumentType(int id, InstrumentType type) {
 	} else {
 		instr = new SampleInstrument() ;
 	}
+	instr->Init() ;
 	instrument_[id] = instr ;
 	if (mixer) {
 		mixer->Unlock();
 	}
-	instr->Init() ;
 	return true ;
 }
 

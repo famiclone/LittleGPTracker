@@ -102,6 +102,9 @@ SampleInstrument::SampleInstrument() {
 	     new Variable("slicetoend", SIP_SLICETOEND, sliceToEndTypes, 2, 0);
 	 Insert(sliceToEnd_);
 
+	 reverse_ = new Variable("reverse", SIP_REVERSE, reverseTypes, 2, 0);
+	 Insert(reverse_);
+
 	 loopStart_=new WatchedVariable("loopstart",SIP_LOOPSTART,0) ;
 	 Insert(loopStart_) ;
 	 loopStart_->AddObserver(*this) ;
@@ -238,42 +241,81 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 
      float driverRate = float(Audio::GetInstance()->GetSampleRate());
      int isSliced = slices_->GetInt() > 1;
+     bool wantReverse = (reverse_ && reverse_->GetInt() != 0);
      rp->sliceToEnd_ = false;
+
+     int domainStart = start_->GetInt();
+     if (domainStart < 0 || domainStart >= rp->sampleSize_) {
+         domainStart = 0;
+     }
+     int domainEnd = rp->rendLoopEnd_;
+     if (domainEnd > rp->sampleSize_ || domainEnd <= domainStart) {
+         domainEnd = rp->sampleSize_;
+     }
+
+     int segStart = domainStart;
+     int segEnd = domainEnd;
+
      if (isSliced) {
 		 if (rp->midiNote_ > slices_->GetInt() - 1) return false; // No sound outside of slice range
 		 if (rp->sampleSize_ < 1) {
 			 return false;
 		 }
-		 // Slice over the configured loop end (same domain as the waveform UI),
-		 // but never past the actual PCM buffer.
-		 int domainEnd = rp->rendLoopEnd_;
-		 if (domainEnd > rp->sampleSize_) {
-			 domainEnd = rp->sampleSize_;
+		 int domainLen = domainEnd - domainStart;
+		 if (domainLen < 1) {
+			 domainLen = 1;
 		 }
-		 if (domainEnd < 1) {
-			 domainEnd = rp->sampleSize_;
-		 }
-		 int slice = domainEnd / slices_->GetInt();
+		 int slice = domainLen / slices_->GetInt();
 		 if (slice < 1) {
 			 slice = 1;
 		 }
-		 rp->rendLoopStart_ = rp->midiNote_ * slice;
-		 // Default: gate at next slice. "to end" plays through the remainder
-		 // of the sample as a oneshot (see Render — no loop wrap).
+		 int sliceStart = domainStart + rp->midiNote_ * slice;
+		 int sliceEnd = domainStart + (rp->midiNote_ + 1) * slice;
+		 if (sliceEnd > domainEnd) {
+			 sliceEnd = domainEnd;
+		 }
+		 // Default: gate at slice bounds. "to end" plays through the remainder
+		 // of the active segment as a oneshot (see Render — no loop wrap).
 		 if (sliceToEnd_->GetInt()) {
 			 rp->sliceToEnd_ = true;
-			 rp->rendLoopEnd_ = rp->sampleSize_;
-		 } else {
-			 rp->rendLoopEnd_ = (rp->midiNote_ + 1) * slice;
-			 if (rp->rendLoopEnd_ > rp->sampleSize_) {
-				 rp->rendLoopEnd_ = rp->sampleSize_;
+			 if (wantReverse) {
+				 segStart = domainStart;
+				 segEnd = sliceEnd;
+			 } else {
+				 segStart = sliceStart;
+				 segEnd = domainEnd;
 			 }
+		 } else {
+			 segStart = sliceStart;
+			 segEnd = sliceEnd;
 		 }
-		 if (rp->rendLoopStart_ >= rp->rendLoopEnd_) {
-			 rp->rendLoopStart_ =
-			     rp->sampleSize_ > 1 ? rp->sampleSize_ - 1 : 0;
-			 rp->rendLoopEnd_ = rp->sampleSize_;
+		 if (segStart >= segEnd) {
+			 segStart = domainEnd > 1 ? domainEnd - 1 : 0;
+			 segEnd = domainEnd;
 		 }
+	 }
+
+	 if (wantReverse) {
+		 rp->rendLoopStart_ = (segEnd > segStart + 1) ? (segEnd - 1) : segStart;
+		 rp->rendLoopEnd_ = segStart;
+		 rp->rendFirst_ = rp->rendLoopStart_;
+		 rp->reverse_ = true;
+	 } else if (isSliced) {
+		 rp->rendLoopStart_ = segStart;
+		 rp->rendLoopEnd_ = segEnd;
+		 rp->rendFirst_ = segStart;
+		 rp->reverse_ = false;
+	 } else {
+		 if (!source_->IsMulti()) {
+			 int ls = loopStart_->GetInt();
+			 if (ls < segStart || ls >= segEnd) {
+				 ls = segStart;
+			 }
+			 rp->rendLoopStart_ = ls;
+			 rp->rendLoopEnd_ = segEnd;
+		 }
+		 rp->rendFirst_ = segStart;
+		 rp->reverse_ = (rp->rendLoopEnd_ < rp->rendFirst_);
 	 }
 
 	 switch (loopmode) {
@@ -284,12 +326,10 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
              // if instrument sampled below 44.1Khz, should
              // travel slower in sample
 
-             rp->rendFirst_ =
-                 (isSliced) ? rp->rendLoopStart_ : start_->GetInt();
              rp->position_ = float(rp->rendFirst_);
              rp->baseSpeed_ =
                  fl2fp(source_->GetSampleRate(rp->midiNote_) / driverRate);
-             rp->reverse_ = (rp->rendLoopEnd_ < rp->position_);
+             rp->reverse_ = wantReverse || (rp->rendLoopEnd_ < rp->position_);
 
              break;
 
@@ -703,7 +743,13 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 		fixed *fltDelayPtr=0 ;
 		fixed *fltHeightPtr=0 ;
 
-    short *dsBasePtr = ((short *)wavbuf) + rp->rendFirst_* channelCount;
+    int dsBaseFrame = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+                          ? rp->rendLoopStart_
+                          : rp->rendLoopEnd_;
+    if (dsBaseFrame < 0) {
+        dsBaseFrame = 0;
+    }
+    short *dsBasePtr = ((short *)wavbuf) + dsBaseFrame * channelCount;
        
 		while (count>0) {
 
@@ -1145,13 +1191,12 @@ void SampleInstrument::Update(Observable &o,I_ObservableData *d)
 	switch(id) {
 		case SIP_SAMPLE:	
 		{
-			if (running_) {
-				dirty_=true ; // we'll update later, when instrument gets re-triggered
-			} else {
-				updateInstrumentData(true) ;
-				SetChanged() ;
-				NotifyObservers();
-			} ;
+			for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+				renderParams_[i].finished_ = true;
+			}
+			updateInstrumentData(true) ;
+			SetChanged() ;
+			NotifyObservers();
 		}
 			break ;
 
@@ -1504,6 +1549,110 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
 				if (drive >0 ) rp->drive_=drive ;
 				if (crush >0 ) rp->crush_=crush ;
 			}
+			break ;
+		case I_CMD_RVRS:
+			{
+				if (!source_ || rp->sampleSize_ < 1) {
+					break;
+				}
+				unsigned char mode = (unsigned char)(value & 0xFF);
+				unsigned char posShift = (unsigned char)(value >> 8);
+				bool wantRev = (mode == 0)   ? (!rp->reverse_)
+				               : (mode == 2) ? false
+				                             : true;
+
+				bool atNoteStart =
+				    (fabs(rp->position_ - float(rp->rendFirst_)) < 1.0f);
+
+				int lowBound = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+				                   ? rp->rendLoopStart_
+				                   : rp->rendLoopEnd_;
+				int highBound = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+				                    ? rp->rendLoopEnd_
+				                    : (rp->rendLoopStart_ + 1);
+
+				int nSlices = slices_->GetInt();
+				if (atNoteStart && nSlices > 1 &&
+				    rp->midiNote_ < nSlices) {
+					int domainStart = start_->GetInt();
+					if (domainStart < 0 || domainStart >= rp->sampleSize_) {
+						domainStart = 0;
+					}
+					int domainEnd = loopEnd_->GetInt();
+					if (domainEnd > rp->sampleSize_ ||
+					    domainEnd <= domainStart) {
+						domainEnd = rp->sampleSize_;
+					}
+					int domainLen = domainEnd - domainStart;
+					if (domainLen < 1) {
+						domainLen = 1;
+					}
+					int slice = domainLen / nSlices;
+					if (slice < 1) {
+						slice = 1;
+					}
+					int sliceStart = domainStart + rp->midiNote_ * slice;
+					int sliceEnd =
+					    domainStart + (rp->midiNote_ + 1) * slice;
+					if (sliceEnd > domainEnd) {
+						sliceEnd = domainEnd;
+					}
+					if (sliceToEnd_->GetInt()) {
+						rp->sliceToEnd_ = true;
+						if (wantRev) {
+							lowBound = domainStart;
+							highBound = sliceEnd;
+						} else {
+							lowBound = sliceStart;
+							highBound = domainEnd;
+						}
+					} else {
+						lowBound = sliceStart;
+						highBound = sliceEnd;
+					}
+				}
+
+				if (lowBound < 0) {
+					lowBound = 0;
+				}
+				if (highBound > rp->sampleSize_ || highBound <= lowBound) {
+					highBound = rp->sampleSize_;
+				}
+
+				if (wantRev) {
+					rp->rendLoopStart_ = (highBound > lowBound + 1)
+					                         ? (highBound - 1)
+					                         : lowBound;
+					rp->rendLoopEnd_ = lowBound;
+					rp->reverse_ = true;
+				} else {
+					rp->rendLoopStart_ = lowBound;
+					rp->rendLoopEnd_ = highBound;
+					rp->reverse_ = false;
+				}
+
+				if (posShift != 0) {
+					rp->position_ =
+					    float(lowBound) +
+					    (float(highBound - lowBound) * float(posShift)) /
+					        256.0f;
+					rp->finished_ = false;
+				} else if (atNoteStart || rp->finished_) {
+					rp->rendFirst_ = rp->rendLoopStart_;
+					rp->position_ = float(rp->rendFirst_);
+					rp->finished_ = false;
+				} else {
+					if (rp->position_ < float(lowBound)) {
+						rp->position_ = float(lowBound);
+					} else if (rp->position_ >= float(highBound)) {
+						rp->position_ = float(
+						    (highBound > lowBound + 1) ? (highBound - 1)
+						                               : lowBound);
+					}
+				}
+				rp->couldClick_ = SHOULD_KILL_CLICKS;
+			}
+			break ;
 		default:
 			break;
 	} ;

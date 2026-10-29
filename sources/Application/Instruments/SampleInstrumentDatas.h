@@ -11,6 +11,8 @@ char *interpolationTypes[] = {
 
 char *sliceToEndTypes[] = {"off", "on"};
 
+char *reverseTypes[] = {"off", "on"};
+
 char *filterMode[] = {
 	"original",
   "bassy",

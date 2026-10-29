@@ -54,8 +54,7 @@ class PhraseView : public View {
 
     void setTextProps(GUITextProperties &props, int row, int col, bool restore);
     void drawSampleStrip();
-    void ensureWaveformCache(short *pcm, int domain, int nCh, int sampleIdx,
-                             int nSlices);
+    void ensureWaveformCache(short *pcm, int nFrames, int nCh, int sampleIdx);
     void clearWaveformStrip(int px, int py, int pw, int ph);
     int resolvePlayingSlice(int instrId, I_Instrument *instr, int nSlices);
     void drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
@@ -81,13 +80,13 @@ class PhraseView : public View {
     int findClosestInstrumentFor(int);
     unsigned char wavePeak_[kWaveBins];
     int waveCacheSample_;
-    int waveCacheDomain_;
-    int waveCacheSlices_;
+    int waveCacheFrames_;
     // Skip redrawing the pixel strip when nothing visible changed —
     // Flush runs on every player tick and was starving audio on Phrase.
     bool overlayValid_;
     int overlayDrawnSample_;
-    int overlayDrawnDomain_;
+    int overlayDrawnStart_;
+    int overlayDrawnEnd_;
     int overlayDrawnSlices_;
     int overlayDrawnSlice_;
     bool overlayDrawnSliceToEnd_;

@@ -42,12 +42,12 @@ PhraseView::PhraseView(GUIWindow &w, ViewData *viewData)
     lastParam_ = 0;
     commandSelectorModalActive_ = false;
     waveCacheSample_ = -1;
-    waveCacheDomain_ = -1;
-    waveCacheSlices_ = -1;
+    waveCacheFrames_ = -1;
     memset(wavePeak_, 0, sizeof(wavePeak_));
     overlayValid_ = false;
     overlayDrawnSample_ = -1;
-    overlayDrawnDomain_ = -1;
+    overlayDrawnStart_ = -1;
+    overlayDrawnEnd_ = -1;
     overlayDrawnSlices_ = -1;
     overlayDrawnSlice_ = -2;
     overlayDrawnSliceToEnd_ = false;
@@ -1164,23 +1164,21 @@ void PhraseView::drawSampleStrip() {
     ClearRect(stripLeft - 1, stripTop, stripWidth + 2, stripHeight);
 }
 
-void PhraseView::ensureWaveformCache(short *pcm, int domain, int nCh,
-                                     int sampleIdx, int nSlices) {
-    if (waveCacheSample_ == sampleIdx && waveCacheDomain_ == domain &&
-        waveCacheSlices_ == nSlices) {
+void PhraseView::ensureWaveformCache(short *pcm, int nFrames, int nCh,
+                                     int sampleIdx) {
+    if (waveCacheSample_ == sampleIdx && waveCacheFrames_ == nFrames) {
         return;
     }
     waveCacheSample_ = sampleIdx;
-    waveCacheDomain_ = domain;
-    waveCacheSlices_ = nSlices;
+    waveCacheFrames_ = nFrames;
     for (int b = 0; b < kWaveBins; b++) {
-        int start = (int)((long)b * domain / kWaveBins);
-        int end = (int)((long)(b + 1) * domain / kWaveBins);
+        int start = (int)((long)b * nFrames / kWaveBins);
+        int end = (int)((long)(b + 1) * nFrames / kWaveBins);
         if (end <= start) {
             end = start + 1;
         }
-        if (end > domain) {
-            end = domain;
+        if (end > nFrames) {
+            end = nFrames;
         }
         int peak = 0;
         int stride = ((end - start) / 48) + 1;
@@ -1301,7 +1299,8 @@ void PhraseView::clearWaveformStrip(int px, int py, int pw, int ph) {
     aw.EndBatchDraw(strip);
     overlayValid_ = true;
     overlayDrawnSample_ = -3;
-    overlayDrawnDomain_ = -1;
+    overlayDrawnStart_ = -1;
+    overlayDrawnEnd_ = -1;
     overlayDrawnSlices_ = -1;
     overlayDrawnSlice_ = -2;
     overlayDrawnSynthKey_ = 0;
@@ -1380,10 +1379,18 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
         return;
     }
 
-    // Same bounds the player uses before slicing (loop end, clamped to size).
-    int domain = si->GetLoopEnd();
-    if (domain <= 0 || domain > nFrames) {
-        domain = nFrames;
+    Variable *startVar = si->FindVariable(SIP_START);
+    Variable *endVar = si->FindVariable(SIP_END);
+    int startFrame = startVar ? startVar->GetInt() : 0;
+    int endFrame = endVar ? endVar->GetInt() : nFrames;
+    if (endFrame <= 0 || endFrame > nFrames) {
+        endFrame = nFrames;
+    }
+    if (startFrame < 0) {
+        startFrame = 0;
+    }
+    if (startFrame >= endFrame) {
+        startFrame = endFrame > 1 ? endFrame - 1 : 0;
     }
 
     Variable *slicesVar = si->FindVariable(SIP_SLICES);
@@ -1400,13 +1407,25 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
     // each time starves the audio fill thread on macOS — keep the previous
     // pixels when the visible strip state is unchanged.
     if (overlayValid_ && overlayDrawnSample_ == sampleIdx &&
-        overlayDrawnDomain_ == domain && overlayDrawnSlices_ == nSlices &&
-        overlayDrawnSlice_ == playingSlice &&
+        overlayDrawnStart_ == startFrame && overlayDrawnEnd_ == endFrame &&
+        overlayDrawnSlices_ == nSlices && overlayDrawnSlice_ == playingSlice &&
         overlayDrawnSliceToEnd_ == sliceToEnd && overlayDrawnSynthKey_ == 0) {
         return;
     }
 
-    ensureWaveformCache(pcm, domain, nCh, sampleIdx, nSlices);
+    ensureWaveformCache(pcm, nFrames, nCh, sampleIdx);
+
+    int selX0 = px + (int)((long)startFrame * pw / nFrames);
+    int selX1 = px + (int)((long)endFrame * pw / nFrames);
+    if (selX0 < px)
+        selX0 = px;
+    if (selX1 > px + pw)
+        selX1 = px + pw;
+    if (selX1 <= selX0)
+        selX1 = selX0 + 1;
+    int selW = selX1 - selX0;
+    if (selW < 1)
+        selW = 1;
 
     GUIRect stripDirty(px - 2, py, px + pw + 2, py + ph);
     aw.BeginBatchDraw();
@@ -1415,30 +1434,44 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
     aw.FillRect(stripDirty, CD_BACKGROUND);
     GUIRect leftRail(px - 2, py, px, py + ph);
     GUIRect rightRail(px + pw, py, px + pw + 2, py + ph);
-    aw.FillRect(leftRail, CD_BORDER);
-    aw.FillRect(rightRail, CD_BORDER);
+    aw.FillRect(leftRail, (selX0 <= px) ? CD_BORDER : CD_SONGVIEW00);
+    aw.FillRect(rightRail, (selX1 >= px + pw) ? CD_BORDER : CD_SONGVIEW00);
 
-    // Active slice fill — use PLAY so it stays visible under the waveform.
-    // With "to end", highlight from the triggered slice through sample end.
-    if (playingSlice >= 0) {
-        int x0 = px + (int)((long)playingSlice * pw / nSlices);
-        int x1 = sliceToEnd
-                     ? px + pw
-                     : px + (int)((long)(playingSlice + 1) * pw / nSlices);
-        if (x1 <= x0) {
-            x1 = x0 + 1;
+    const int midY = py + ph / 2;
+    const int maxAmp = ph / 2 - 1;
+
+    // Horizontal center baseline: dimmed outside [selX0, selX1], bright inside.
+    if (selX0 > px) {
+        GUIRect midLeft(px, midY - 1, selX0, midY + 1);
+        aw.FillRect(midLeft, CD_SONGVIEW00);
+    }
+    GUIRect midActive(selX0, midY - 1, selX1, midY + 1);
+    aw.FillRect(midActive, CD_HILITE1);
+    if (selX1 < px + pw) {
+        GUIRect midRight(selX1, midY - 1, px + pw, midY + 1);
+        aw.FillRect(midRight, CD_SONGVIEW00);
+    }
+
+    // Active slice fill inside [selX0 .. selX1].
+    int playX0 = -1;
+    int playX1 = -1;
+    if (playingSlice >= 0 && nSlices > 1) {
+        playX0 = selX0 + (int)((long)playingSlice * selW / nSlices);
+        playX1 = sliceToEnd
+                     ? selX1
+                     : selX0 + (int)((long)(playingSlice + 1) * selW / nSlices);
+        if (playX1 <= playX0) {
+            playX1 = playX0 + 1;
         }
-        GUIRect band(x0, py, x1, py + ph);
+        GUIRect band(playX0, py, playX1, py + ph);
         aw.FillRect(band, CD_HILITE2);
-        GUIRect tip(x0, py, x1, py + 2);
+        GUIRect tip(playX0, py, playX1, py + 2);
         aw.FillRect(tip, CD_PLAY);
-        GUIRect tip2(x0, py + ph - 2, x1, py + ph);
+        GUIRect tip2(playX0, py + ph - 2, playX1, py + ph);
         aw.FillRect(tip2, CD_PLAY);
     }
 
     // Cached envelope mapped across the strip.
-    const int midY = py + ph / 2;
-    const int maxAmp = ph / 2 - 1;
     for (int b = 0; b < kWaveBins; b++) {
         int x0 = px + (int)((long)b * pw / kWaveBins);
         int x1 = px + (int)((long)(b + 1) * pw / kWaveBins);
@@ -1452,30 +1485,40 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
         if (amp <= 0) {
             continue;
         }
-        int sliceOfBin = (nSlices > 1) ? (b * nSlices) / kWaveBins : -1;
+        int midBin = (x0 + x1) / 2;
+        bool inSelected = (midBin >= selX0 && midBin < selX1);
         bool inPlaying =
-            (playingSlice >= 0) &&
-            (sliceToEnd ? (sliceOfBin >= playingSlice)
-                        : (sliceOfBin == playingSlice));
-        ColorDefinition col = inPlaying ? CD_PLAY : CD_HILITE1;
+            inSelected && (playX0 >= 0) && (midBin >= playX0 && midBin < playX1);
+        ColorDefinition col = !inSelected ? CD_SONGVIEW00
+                              : inPlaying ? CD_PLAY
+                                          : CD_HILITE1;
         GUIRect column(x0, midY - amp, x1, midY + amp + 1);
         aw.FillRect(column, col);
     }
 
-    // Slice markers on top of the waveform.
+    // Slice markers inside [selX0 .. selX1].
     if (nSlices > 1) {
         for (int s = 1; s < nSlices; s++) {
-            int mx = px + (int)((long)s * pw / nSlices);
+            int mx = selX0 + (int)((long)s * selW / nSlices);
             GUIRect marker(mx, py, mx + 1, py + ph);
             aw.FillRect(marker, CD_BORDER);
         }
     }
 
+    // White active-segment bracket matching InstrumentView.
+    GUIRect startBar(selX0 - 1, py, selX0 + 1, py + ph);
+    GUIRect endBar(selX1 - 1, py, selX1 + 1, py + ph);
+    GUIRect bottomBar(selX0 - 1, py + ph - 2, selX1 + 1, py + ph);
+    aw.FillRect(startBar, CD_NORMAL);
+    aw.FillRect(endBar, CD_NORMAL);
+    aw.FillRect(bottomBar, CD_NORMAL);
+
     aw.EndBatchDraw(stripDirty);
 
     overlayValid_ = true;
     overlayDrawnSample_ = sampleIdx;
-    overlayDrawnDomain_ = domain;
+    overlayDrawnStart_ = startFrame;
+    overlayDrawnEnd_ = endFrame;
     overlayDrawnSlices_ = nSlices;
     overlayDrawnSlice_ = playingSlice;
     overlayDrawnSliceToEnd_ = sliceToEnd;
@@ -1618,7 +1661,8 @@ void PhraseView::drawSynthOverlay(int px, int py, int pw, int ph,
 
     overlayValid_ = true;
     overlayDrawnSample_ = -2; // synth marker (not a sample index)
-    overlayDrawnDomain_ = -1;
+    overlayDrawnStart_ = -1;
+    overlayDrawnEnd_ = -1;
     overlayDrawnSlices_ = -1;
     overlayDrawnSlice_ = -2;
     overlayDrawnSliceToEnd_ = false;
