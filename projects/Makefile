@@ -295,6 +295,7 @@ LINUXFILES := \
 	UnixFileSystem.o \
 	LINUXMain.o \
 	LINUXSystem.o \
+	LinuxPowerSleep.o \
 	GUIFactory.o \
 	SDLGUIWindowImp.o \
 	SDLEventManager.o \

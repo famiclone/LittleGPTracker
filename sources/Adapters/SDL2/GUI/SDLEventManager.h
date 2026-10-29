@@ -24,6 +24,10 @@ public:
 	virtual int GetKeyCode(const char *name) ;
 
 private:
+	int FindJoySlot(SDL_JoystickID instanceId) const ;
+	void EnsureJoyControllers(int slot) ;
+	void OnWakeFromSleep() ;
+
 	static bool finished_ ;
 	static bool dumpEvent_ ;
 	SDL_Joystick *joystick_[MAX_JOY_COUNT];
