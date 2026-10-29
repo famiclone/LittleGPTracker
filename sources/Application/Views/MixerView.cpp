@@ -2,11 +2,14 @@
 #include "Application/Mixer/MixerService.h"
 #include "Application/Model/Mixer.h"
 #include "Application/Player/Player.h"
+#include "Application/Player/PlayerChannel.h"
+#include "Application/Player/SyncMaster.h"
 #include "Application/Utils/char.h"
 #include "UIController.h"
 #include "VuMeterUtil.h"
 #include <iostream>
 #include <sstream>
+#include <stdio.h>
 #include <string>
 
 MixerView::MixerView(GUIWindow &w,ViewData *viewData):View(w,viewData) {
@@ -48,11 +51,11 @@ void MixerView::OnFocus() { viewData_->mixerCol_ = viewData_->songX_; }
 
 void MixerView::updateCursor(int dx,int dy) {
     if (dy != 0) {
-        // UP/DOWN cycles between rows 1, 2, 3
+        // UP/DOWN cycles between rows 1..4 (VOL, HPF, LPF, DLY)
         if (dy < 0) {
-            mixerRow_ = (mixerRow_ == 1) ? 3 : mixerRow_ - 1;
+            mixerRow_ = (mixerRow_ == 1) ? 4 : mixerRow_ - 1;
         } else {
-            mixerRow_ = (mixerRow_ == 3) ? 1 : mixerRow_ + 1;
+            mixerRow_ = (mixerRow_ == 4) ? 1 : mixerRow_ + 1;
         }
 		isDirty_ = true;
     }
@@ -163,7 +166,67 @@ void MixerView::processNormalButtonMask(unsigned int mask) {
             isDirty_ = true;
         }
     } else if (mask & EPBM_A) {
-        if (mixerRow_ == 3) {
+        if (mixerRow_ == 4) {
+            // DLY: A+Up/Down = delay time in phrase steps,
+            // A+Left/Right = wet mix / feedback amount
+            Mixer *m = Mixer::GetInstance();
+            int col = viewData_->mixerCol_;
+            int steps = m->GetChannelDelaySteps(col);
+            int amt = m->GetChannelDelayAmt(col);
+            int maxSteps = 16;
+            float stepSamples =
+                SyncMaster::GetInstance()->GetStepSampleCount();
+            if (stepSamples < 1.0f) {
+                stepSamples = 1.0f;
+            }
+            int fit = (int)(CHANNEL_DELAY_MAX_FRAMES / stepSamples);
+            if (fit < 1) {
+                fit = 1;
+            }
+            if (fit < maxSteps) {
+                maxSteps = fit;
+            }
+
+            if (mask & EPBM_UP) {
+                if (steps < maxSteps) {
+                    steps++;
+                }
+                if (steps > 0 && amt == 0) {
+                    amt = 0x80;
+                }
+            } else if (mask & EPBM_DOWN) {
+                if (steps > 0) {
+                    steps--;
+                }
+            } else if (mask & EPBM_RIGHT) {
+                amt = amt + 8;
+                if (amt > 255) {
+                    amt = 255;
+                }
+                if (steps == 0 && amt > 0) {
+                    steps = 1;
+                }
+            } else if (mask & EPBM_LEFT) {
+                amt = amt - 8;
+                if (amt < 0) {
+                    amt = 0;
+                }
+            }
+
+            if (steps != m->GetChannelDelaySteps(col) ||
+                amt != m->GetChannelDelayAmt(col)) {
+                m->SetChannelDelaySteps(col, (unsigned char)steps);
+                m->SetChannelDelayAmt(col, (unsigned char)amt);
+                isDirty_ = true;
+            }
+            if (steps == 0) {
+                SetNotification("              Delay: OFF");
+            } else {
+                char notifBuf[48];
+                sprintf(notifBuf, "       Delay: %d st  mix:%02X", steps, amt);
+                SetNotification(notifBuf);
+            }
+        } else if (mixerRow_ == 3) {
             // On LPF row: A+Up/Down = coarse ×2/÷2, A+Left/Right = fine
             // ±10Hz A alone (no direction) = toggle off/1000Hz
             Mixer *m = Mixer::GetInstance();
@@ -483,6 +546,38 @@ void MixerView::DrawView() {
         pos._x += dx;
     }
 
+    // Row 4: Delay (tempo-synced steps)
+    pos = anchor;
+    pos._y += 5;
+    if (mixerRow_ == 4) {
+        rowLabelProps.invert_ = true;
+        SetColor(CD_HILITE2);
+    } else {
+        rowLabelProps.invert_ = false;
+        SetColor(CD_NORMAL);
+    }
+    DrawString(pos._x - 5, pos._y, "DLY", rowLabelProps);
+
+    pos._x = anchor._x;
+    for (int i = 0; i < 8; i++) {
+        props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 4);
+        SetColor((i == viewData_->mixerCol_ && mixerRow_ == 4) ? CD_HILITE2
+                                                               : CD_NORMAL);
+
+        unsigned char steps = mixer->GetChannelDelaySteps(i);
+        char dlyCode[4];
+        if (steps == 0) {
+            dlyCode[0] = '-';
+            dlyCode[1] = '-';
+            dlyCode[2] = ' ';
+            dlyCode[3] = '\0';
+        } else {
+            hex2char(steps, dlyCode);
+        }
+        DrawString(pos._x, pos._y, dlyCode, props);
+        pos._x += dx;
+    }
+
     drawMap() ;
 	drawNotes() ;
     EnableNotification();
@@ -565,7 +660,7 @@ void MixerView::DrawVuBars() {
     Player *player = Player::GetInstance();
 
     GUIPoint vuPos = GetAnchor();
-    vuPos._y += 16; // Position below the row labels (bus, vol, hpf, lpf)
+    vuPos._y += 16; // Position below vol/hpf/lpf/dly rows
 
     GUITextProperties vuProps;
     vuProps.invert_ = true;

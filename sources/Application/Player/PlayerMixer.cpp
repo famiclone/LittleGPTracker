@@ -109,6 +109,8 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
       channel_[i]->SetVolume(fl2fp(mixer->GetChannelVolume(i) / 255.0f));
       channel_[i]->SetHPFMode((unsigned char)mixer->GetChannelHPF(i));
       channel_[i]->SetLPFFreq(mixer->GetChannelLPF(i));
+      channel_[i]->SetDelay(mixer->GetChannelDelaySteps(i),
+                            mixer->GetChannelDelayAmt(i));
   }
   MixerService *ms=MixerService::GetInstance();
   ms->SetPregain(project_->GetPregain());

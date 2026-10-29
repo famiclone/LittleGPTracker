@@ -5,6 +5,7 @@
 #include "Application/Player/SyncMaster.h"
 #include "Foundation/Variables/WatchedVariable.h"
 #include "Groove.h"
+#include "Mixer.h"
 #include "Scale.h"
 #include "Services/Midi/MidiService.h"
 #include "System/Console/Trace.h"
@@ -64,6 +65,10 @@ tempoNudge_(0)
 	TableHolder::GetInstance() ;
 
 	Groove::GetInstance()->Clear() ;
+
+	// Must exist before PersistencyService::Load so the MIXER XML node
+	// (vol/HPF/LPF/delay) is restored; otherwise defaults wipe on reload.
+	Mixer::GetInstance()->Clear() ;
 
 	tempoTapCount_=0 ;
 

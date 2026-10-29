@@ -23,6 +23,15 @@ public:
     inline void SetChannelHPF(int i, int value) { channelHPF_[i] = (unsigned char)value; };
     inline unsigned short GetChannelLPF(int i) { return channelLPF_[i]; };
     inline void SetChannelLPF(int i, unsigned short value) { channelLPF_[i] = value; };
+    // Echo/delay: steps=0 off; amt is wet mix and feedback (0-255)
+    inline unsigned char GetChannelDelaySteps(int i) { return channelDelaySteps_[i]; };
+    inline void SetChannelDelaySteps(int i, unsigned char value) {
+        channelDelaySteps_[i] = value;
+    };
+    inline unsigned char GetChannelDelayAmt(int i) { return channelDelayAmt_[i]; };
+    inline void SetChannelDelayAmt(int i, unsigned char value) {
+        channelDelayAmt_[i] = value;
+    };
 
 	virtual void SaveContent(TiXmlNode *node) ;
 	virtual void RestoreContent(TiXmlElement *element);
@@ -31,6 +40,8 @@ private:
     unsigned char channelVolume_[SONG_CHANNEL_COUNT];
     unsigned char channelHPF_[SONG_CHANNEL_COUNT];
     unsigned short channelLPF_[SONG_CHANNEL_COUNT];
+    unsigned char channelDelaySteps_[SONG_CHANNEL_COUNT];
+    unsigned char channelDelayAmt_[SONG_CHANNEL_COUNT];
 } ;	
 
 #endif

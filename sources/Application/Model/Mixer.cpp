@@ -16,6 +16,8 @@ void Mixer::Clear() {
         channelVolume_[i] = 0xFF;
         channelHPF_[i] = 0; // 0=OFF, 1=20Hz, 2=90Hz
         channelLPF_[i] = 0; // 0=OFF, else frequency in Hz (20-20000)
+        channelDelaySteps_[i] = 0; // 0=OFF, else delay in phrase steps
+        channelDelayAmt_[i] = 0x80; // wet + feedback
     }
 } ;
 
@@ -25,6 +27,8 @@ void Mixer::SaveContent(TiXmlNode *node) {
     saveHexBuffer(node, "VOL", channelVolume_, SONG_CHANNEL_COUNT);
     saveHexBuffer(node, "HPF", channelHPF_, SONG_CHANNEL_COUNT);
     saveHexBuffer(node, "LPF", channelLPF_, SONG_CHANNEL_COUNT);
+    saveHexBuffer(node, "DLYS", channelDelaySteps_, SONG_CHANNEL_COUNT);
+    saveHexBuffer(node, "DLYA", channelDelayAmt_, SONG_CHANNEL_COUNT);
 } ;
 
 void Mixer::RestoreContent(TiXmlElement *element) {
@@ -39,6 +43,10 @@ void Mixer::RestoreContent(TiXmlElement *element) {
             restoreHexBuffer(current, channelHPF_);
         } else if (!strcmp("LPF", value)) {
             restoreHexBuffer(current, (unsigned char *)channelLPF_);
+        } else if (!strcmp("DLYS", value)) {
+            restoreHexBuffer(current, channelDelaySteps_);
+        } else if (!strcmp("DLYA", value)) {
+            restoreHexBuffer(current, channelDelayAmt_);
         }
         current = current->NextSiblingElement();
     }

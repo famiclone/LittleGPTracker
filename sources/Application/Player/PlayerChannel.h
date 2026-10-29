@@ -5,6 +5,11 @@
 #include "Services/Audio/AudioModule.h"
 #include "Application/Instruments/I_Instrument.h"
 #include "Application/Mixer/MixBus.h"
+#include "Application/Utils/fixed.h"
+
+// Max delay ring length in frames (~1s at 44.1k). Tempo-synced step count
+// is clamped so steps * samplesPerStep fits in this buffer.
+enum { CHANNEL_DELAY_MAX_FRAMES = 44100 };
 
 class PlayerChannel: public AudioModule {
 public:
@@ -21,9 +26,14 @@ public:
     void SetHPFMode(unsigned char mode);
     void ApplyHPF(fixed *buffer, int samplecount);
     void SetLPFFreq(unsigned short freq);
+    void SetDelay(unsigned char steps, unsigned char amt);
     void Reset();
 
   private:
+	void ensureDelayBuffer() ;
+	void syncDelayLength() ;
+	bool applyDelay(fixed *buffer, int samplecount) ;
+
 	int index_ ;
 	I_Instrument *instr_ ;
 	bool muted_ ;
@@ -37,6 +47,11 @@ public:
     fixed lpfPrevOutput_[2];
     fixed lpfAlpha_;
     unsigned short lpfFreq_;
+    unsigned char delaySteps_;
+    unsigned char delayAmt_;
+    int delayLen_;
+    int delayWritePos_;
+    fixed *delayBuf_;
 };
 
 #endif

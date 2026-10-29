@@ -5,8 +5,9 @@
 #include "Application/Player/SyncMaster.h"
 #include "Application/Utils/fixed.h"
 #include <math.h>
+#include <string.h>
 
-PlayerChannel::PlayerChannel(int index) {             
+PlayerChannel::PlayerChannel(int index) {
     index_=index ;
     instr_=0 ;
     muted_=false ;
@@ -20,9 +21,16 @@ PlayerChannel::PlayerChannel(int index) {
     lpfPrevOutput_[0] = lpfPrevOutput_[1] = i2fp(0);
     lpfAlpha_ = i2fp(0);
     lpfFreq_ = 0;
+    delaySteps_ = 0;
+    delayAmt_ = 0;
+    delayLen_ = 0;
+    delayWritePos_ = 0;
+    delayBuf_ = 0;
 }
 
 PlayerChannel::~PlayerChannel() {
+    delete[] delayBuf_;
+    delayBuf_ = 0;
 }
 
 void PlayerChannel::StartInstrument(I_Instrument *instr,unsigned char note,bool trigger) {
@@ -45,12 +53,127 @@ void PlayerChannel::StopInstrument() {
      instr_=0 ;
 } ;
 
+void PlayerChannel::ensureDelayBuffer() {
+    if (delayBuf_) {
+        return;
+    }
+    delayBuf_ = new fixed[CHANNEL_DELAY_MAX_FRAMES * 2];
+    memset(delayBuf_, 0, sizeof(fixed) * CHANNEL_DELAY_MAX_FRAMES * 2);
+    delayWritePos_ = 0;
+}
+
+void PlayerChannel::syncDelayLength() {
+    if (delaySteps_ == 0) {
+        delayLen_ = 0;
+        delayWritePos_ = 0;
+        return;
+    }
+    ensureDelayBuffer();
+    float stepSamples = SyncMaster::GetInstance()->GetStepSampleCount();
+    if (stepSamples < 1.0f) {
+        stepSamples = 1.0f;
+    }
+    int len = (int)(delaySteps_ * stepSamples + 0.5f);
+    if (len < 1) {
+        len = 1;
+    }
+    if (len > CHANNEL_DELAY_MAX_FRAMES) {
+        len = CHANNEL_DELAY_MAX_FRAMES;
+    }
+    if (len != delayLen_) {
+        delayLen_ = len;
+        delayWritePos_ = 0;
+        memset(delayBuf_, 0, sizeof(fixed) * CHANNEL_DELAY_MAX_FRAMES * 2);
+    }
+}
+
+void PlayerChannel::SetDelay(unsigned char steps, unsigned char amt) {
+    bool stepsChanged = (steps != delaySteps_);
+    delaySteps_ = steps;
+    delayAmt_ = amt;
+    if (steps == 0) {
+        delayLen_ = 0;
+        delayWritePos_ = 0;
+        return;
+    }
+    if (stepsChanged || delayLen_ == 0) {
+        syncDelayLength();
+    } else {
+        // Tempo may have changed; refresh length without always clearing.
+        float stepSamples = SyncMaster::GetInstance()->GetStepSampleCount();
+        if (stepSamples < 1.0f) {
+            stepSamples = 1.0f;
+        }
+        int len = (int)(delaySteps_ * stepSamples + 0.5f);
+        if (len < 1) {
+            len = 1;
+        }
+        if (len > CHANNEL_DELAY_MAX_FRAMES) {
+            len = CHANNEL_DELAY_MAX_FRAMES;
+        }
+        if (len != delayLen_) {
+            delayLen_ = len;
+            delayWritePos_ = 0;
+            if (delayBuf_) {
+                memset(delayBuf_, 0,
+                       sizeof(fixed) * CHANNEL_DELAY_MAX_FRAMES * 2);
+            }
+        }
+    }
+}
+
+bool PlayerChannel::applyDelay(fixed *buffer, int samplecount) {
+    if (delaySteps_ == 0 || delayLen_ < 1 || !delayBuf_) {
+        return false;
+    }
+
+    fixed wet = fl2fp(delayAmt_ / 255.0f);
+    fixed dry = fp_sub(i2fp(1), wet);
+    // Feedback tracks mix but stays slightly under 1 to avoid runaway.
+    fixed fb = fl2fp(delayAmt_ / 255.0f * 0.85f);
+    bool any = false;
+
+    for (int n = 0; n < samplecount; n++) {
+        int idx = n * 2;
+        int di = delayWritePos_ * 2;
+        fixed delayedL = delayBuf_[di];
+        fixed delayedR = delayBuf_[di + 1];
+        fixed inL = buffer[idx];
+        fixed inR = buffer[idx + 1];
+
+        fixed outL = fp_add(fp_mul(dry, inL), fp_mul(wet, delayedL));
+        fixed outR = fp_add(fp_mul(dry, inR), fp_mul(wet, delayedR));
+        buffer[idx] = outL;
+        buffer[idx + 1] = outR;
+
+        delayBuf_[di] = fp_add(inL, fp_mul(fb, delayedL));
+        delayBuf_[di + 1] = fp_add(inR, fp_mul(fb, delayedR));
+
+        delayWritePos_++;
+        if (delayWritePos_ >= delayLen_) {
+            delayWritePos_ = 0;
+        }
+
+        if (outL != 0 || outR != 0 || inL != 0 || inR != 0 || delayedL != 0 ||
+            delayedR != 0) {
+            any = true;
+        }
+    }
+    return any;
+}
+
 bool PlayerChannel::Render(fixed *buffer,int samplecount) {
+   bool gotInstr = false;
    if (instr_) {
      bool tableSlice=SyncMaster::GetInstance()->TableSlice() ;
-     bool status = instr_->Render(index_, buffer, samplecount,
-                                  tableSlice | (muted_ << 1));
-     if (status && !muted_) {
+     gotInstr = instr_->Render(index_, buffer, samplecount,
+                               tableSlice | (muted_ << 1));
+     if (muted_) {
+         gotInstr = false;
+     }
+   }
+
+   if (gotInstr) {
          // Apply HPF if enabled
          if (hpfMode_ != 0) {
              for (int n = 0; n < samplecount; n++) {
@@ -89,18 +212,30 @@ bool PlayerChannel::Render(fixed *buffer,int samplecount) {
                  lpfPrevOutput_[1] = out_r;
              }
          }
-
-         // Apply per-channel volume
-         if (volume_ != i2fp(1)) {
-             for (int i = 0; i < samplecount * 2; i++) {
-                 buffer[i] = fp_mul(buffer[i], volume_);
-             }
-         }
-     }
-     return (status && !muted_);
+   } else if (delaySteps_ != 0) {
+       for (int i = 0; i < samplecount * 2; i++) {
+           buffer[i] = i2fp(0);
+       }
    } else {
        return false;
    }
+
+   bool gotDelay = false;
+   if (delaySteps_ != 0) {
+       gotDelay = applyDelay(buffer, samplecount);
+   }
+
+   if (!gotInstr && !gotDelay) {
+       return false;
+   }
+
+   // Apply per-channel volume
+   if (volume_ != i2fp(1)) {
+       for (int i = 0; i < samplecount * 2; i++) {
+           buffer[i] = fp_mul(buffer[i], volume_);
+       }
+   }
+   return true;
 } ;
 
 I_Instrument *PlayerChannel::GetInstrument() {
@@ -184,4 +319,11 @@ void PlayerChannel::Reset() {
   lpfPrevOutput_[0] = lpfPrevOutput_[1] = i2fp(0);
   lpfAlpha_ = i2fp(0);
   lpfFreq_ = 0;
+  delaySteps_ = 0;
+  delayAmt_ = 0;
+  delayLen_ = 0;
+  delayWritePos_ = 0;
+  if (delayBuf_) {
+      memset(delayBuf_, 0, sizeof(fixed) * CHANNEL_DELAY_MAX_FRAMES * 2);
+  }
 };
