@@ -1,0 +1,17 @@
+<CONFIG>
+    <BACKGROUND value="FDF6E3" />
+    <FOREGROUND value="5C6A72" />
+    <BORDER value="F85552" />
+    <HICOLOR1 value="8DA101" />
+    <HICOLOR2 value="F85552" />
+    <CONSOLE value="35A77C" />
+    <CURSORCOLOR value="F85552" />
+    <PLAYCOLOR value="8DA101" />
+    <MUTECOLOR value="E0DCC7" />
+    <SONGVIEW_FE value="DF69BA" />
+    <SONGVIEW_00 value="E0DCC7" />
+    <ROWCOLOR1 value="3A94C5" />
+    <ROWCOLOR2 value="DFA000" />
+    <MAJORBEAT value="DFA000" />
+    <COL_TITLE value="DF69BA" />
+</CONFIG>
