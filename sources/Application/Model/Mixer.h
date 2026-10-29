@@ -41,6 +41,10 @@ public:
     inline void SetChannelReverbAmt(int i, unsigned char value) {
         channelReverbAmt_[i] = value;
     };
+    inline unsigned char GetChannelTapeAmt(int i) { return channelTapeAmt_[i]; };
+    inline void SetChannelTapeAmt(int i, unsigned char value) {
+        channelTapeAmt_[i] = value;
+    };
 
 	virtual void SaveContent(TiXmlNode *node) ;
 	virtual void RestoreContent(TiXmlElement *element);
@@ -53,6 +57,7 @@ private:
     unsigned char channelDelayAmt_[SONG_CHANNEL_COUNT];
     unsigned char channelReverbSize_[SONG_CHANNEL_COUNT];
     unsigned char channelReverbAmt_[SONG_CHANNEL_COUNT];
+    unsigned char channelTapeAmt_[SONG_CHANNEL_COUNT];
 } ;	
 
 #endif

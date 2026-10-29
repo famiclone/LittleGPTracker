@@ -14,10 +14,14 @@ enum InstrumentType {
 	IT_LAST
 } ;
 
+#define MAX_INSTRUMENT_NAME_LENGTH 12
+
 class I_Instrument:public VariableContainer, public Observable {
       
 public:
-	I_Instrument() {} ;
+	I_Instrument() {
+		userName_[0] = '\0';
+	} ;
 	virtual ~I_Instrument() {} ;
 
 	  // Initialisation routine
@@ -48,6 +52,27 @@ public:
 	  virtual InstrumentType GetType()=0 ;
 
 	  virtual const char *GetName()=0 ; 
+
+	  const char *GetUserName() const { return userName_; }
+	  void SetUserName(const char *name) {
+		  if (!name) {
+			  userName_[0] = '\0';
+			  return;
+		  }
+		  int i = 0;
+		  while (name[i] && i < MAX_INSTRUMENT_NAME_LENGTH) {
+			  userName_[i] = name[i];
+			  i++;
+		  }
+		  while (i > 0 && userName_[i - 1] == ' ') {
+			  i--;
+		  }
+		  userName_[i] = '\0';
+	  }
+
+	  virtual unsigned char GetDelaySend() { return 0; }
+	  virtual unsigned char GetReverbSend() { return 0; }
+	  virtual unsigned char GetTapeSend() { return 0; }
 	 
 	  virtual void ProcessCommand(int channel,FourCC cc,ushort value)=0 ;
 
@@ -59,5 +84,7 @@ public:
 	  virtual void GetTableState(TableSaveState &state)=0 ;	 
 	  virtual void SetTableState(TableSaveState &state)=0 ;	 
 
+protected:
+	  char userName_[MAX_INSTRUMENT_NAME_LENGTH + 1];
 };
 #endif

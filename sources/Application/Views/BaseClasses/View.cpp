@@ -80,6 +80,10 @@ void View::drawMap() {
 		GUIPoint pos(View::margin_,anchor._y);
     	GUITextProperties props ;
 
+		Player *player = Player::GetInstance();
+		bool isLive = (player && player->GetSequencerMode() == SM_LIVE);
+		const char *songChar = isLive ? "L" : "S";
+
 		//draw entire map
 		SetColor(CD_HILITE1) ;
     	char buffer[5] ;
@@ -89,7 +93,7 @@ void View::drawMap() {
         DrawString(pos._x,pos._y,buffer,props) ;
 		pos._y++ ;		
 		//row2
-		sprintf(buffer,"SCPI");
+		sprintf(buffer, "%sCPI", songChar);
         DrawString(pos._x,pos._y,buffer,props) ;
 		pos._y++ ;		
 		//row3
@@ -142,8 +146,8 @@ void View::drawMap() {
 			break;
 		default: //VT_SONG
 			pos._y+=1;
-	        DrawString(pos._x,pos._y,"S",props) ;
-			int foo=0;
+	        DrawString(pos._x,pos._y,songChar,props) ;
+			break;
 		}
 
 	}//!minilayout

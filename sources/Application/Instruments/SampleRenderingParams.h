@@ -82,5 +82,10 @@ struct renderParams {
 	bool couldClick_ ;
 
 	char midiNote_ ;  // Current midi note
+
+	float grainPos_[4];
+	float grainPhase_[4];
+	float grainDir_[4];
+	unsigned int grainRng_;
 } ;
 #endif

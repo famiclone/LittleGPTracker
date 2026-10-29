@@ -51,11 +51,11 @@ void MixerView::OnFocus() { viewData_->mixerCol_ = viewData_->songX_; }
 
 void MixerView::updateCursor(int dx,int dy) {
     if (dy != 0) {
-        // UP/DOWN cycles between rows 1..5 (VOL, HPF, LPF, DLY, REV)
+        // UP/DOWN cycles between rows 1..6 (VOL, HPF, LPF, DLY, REV, TPE)
         if (dy < 0) {
-            mixerRow_ = (mixerRow_ == 1) ? 5 : mixerRow_ - 1;
+            mixerRow_ = (mixerRow_ == 1) ? 6 : mixerRow_ - 1;
         } else {
-            mixerRow_ = (mixerRow_ == 5) ? 1 : mixerRow_ + 1;
+            mixerRow_ = (mixerRow_ == 6) ? 1 : mixerRow_ + 1;
         }
 		isDirty_ = true;
     }
@@ -166,7 +166,36 @@ void MixerView::processNormalButtonMask(unsigned int mask) {
             isDirty_ = true;
         }
     } else if (mask & EPBM_A) {
-        if (mixerRow_ == 5) {
+        if (mixerRow_ == 6) {
+            // TPE: A+Up/Down = coarse +-16, A+Left/Right = fine +-4
+            Mixer *m = Mixer::GetInstance();
+            int col = viewData_->mixerCol_;
+            int amt = m->GetChannelTapeAmt(col);
+            if (mask & EPBM_UP) {
+                amt += 16;
+            } else if (mask & EPBM_DOWN) {
+                amt -= 16;
+            } else if (mask & EPBM_RIGHT) {
+                amt += 4;
+            } else if (mask & EPBM_LEFT) {
+                amt -= 4;
+            }
+            if (amt < 0)
+                amt = 0;
+            if (amt > 255)
+                amt = 255;
+            if (amt != m->GetChannelTapeAmt(col)) {
+                m->SetChannelTapeAmt(col, (unsigned char)amt);
+                isDirty_ = true;
+            }
+            if (amt == 0) {
+                SetNotification("               Tape: OFF");
+            } else {
+                char notifBuf[48];
+                sprintf(notifBuf, "            Tape FX: %02X", amt);
+                SetNotification(notifBuf);
+            }
+        } else if (mixerRow_ == 5) {
             // REV: A+Up/Down = room size, A+Left/Right = wet mix
             Mixer *m = Mixer::GetInstance();
             int col = viewData_->mixerCol_;
@@ -653,6 +682,38 @@ void MixerView::DrawView() {
             hex2char(size, revCode);
         }
         DrawString(pos._x, pos._y, revCode, props);
+        pos._x += dx;
+    }
+
+    // Row 6: Tape effect (wow/flutter/saturation)
+    pos = anchor;
+    pos._y += 7;
+    if (mixerRow_ == 6) {
+        rowLabelProps.invert_ = true;
+        SetColor(CD_HILITE2);
+    } else {
+        rowLabelProps.invert_ = false;
+        SetColor(CD_NORMAL);
+    }
+    DrawString(pos._x - 5, pos._y, "TPE", rowLabelProps);
+
+    pos._x = anchor._x;
+    for (int i = 0; i < 8; i++) {
+        props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 6);
+        SetColor((i == viewData_->mixerCol_ && mixerRow_ == 6) ? CD_HILITE2
+                                                               : CD_NORMAL);
+
+        unsigned char tape = mixer->GetChannelTapeAmt(i);
+        char tapeCode[4];
+        if (tape == 0) {
+            tapeCode[0] = '-';
+            tapeCode[1] = '-';
+            tapeCode[2] = ' ';
+            tapeCode[3] = '\0';
+        } else {
+            hex2char(tape, tapeCode);
+        }
+        DrawString(pos._x, pos._y, tapeCode, props);
         pos._x += dx;
     }
 

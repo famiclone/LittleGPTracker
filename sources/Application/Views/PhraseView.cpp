@@ -1527,10 +1527,16 @@ void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
 
 int PhraseView::synthPreviewKey(I_Instrument *instr) const {
     // Fingerprint of params that affect the strip so we can skip redraws.
-    int wave = 0, atk = 0, dec = 0, sus = 0, rel = 0, rate = 0, depth = 0;
+    int mode = 0, wave = 0, mshape = 0, atk = 0, dec = 0, sus = 0, rel = 0;
+    int rate = 0, depth = 0, sz = 0, mult = 0, warp = 0, scan = 0;
+    int tmb = 0, col = 0, deg = 0, red = 0, amp = 0, lim = 0;
     Variable *v;
+    if ((v = instr->FindVariable(SYP_MODE)))
+        mode = v->GetInt();
     if ((v = instr->FindVariable(SYP_WAVEFORM)))
         wave = v->GetInt();
+    if ((v = instr->FindVariable(SYP_MACROSHAPE)))
+        mshape = v->GetInt();
     if ((v = instr->FindVariable(SYP_ATTACK)))
         atk = v->GetInt();
     if ((v = instr->FindVariable(SYP_DECAY)))
@@ -1543,9 +1549,33 @@ int PhraseView::synthPreviewKey(I_Instrument *instr) const {
         rate = v->GetInt();
     if ((v = instr->FindVariable(SYP_LFODEPTH)))
         depth = v->GetInt();
-    return (wave & 0x7) | ((atk & 0xFF) << 3) | ((dec & 0xFF) << 11) |
-           ((sus & 0xFF) << 19) | ((rel & 0x1F) << 27) | ((rate & 0xFF) << 8) |
-           ((depth & 0xFF) << 16);
+    if ((v = instr->FindVariable(SYP_SIZE)))
+        sz = v->GetInt();
+    if ((v = instr->FindVariable(SYP_MULT)))
+        mult = v->GetInt();
+    if ((v = instr->FindVariable(SYP_WARP)))
+        warp = v->GetInt();
+    if ((v = instr->FindVariable(SYP_SCAN)))
+        scan = v->GetInt();
+    if ((v = instr->FindVariable(SYP_TIMBRE)))
+        tmb = v->GetInt();
+    if ((v = instr->FindVariable(SYP_COLOR)))
+        col = v->GetInt();
+    if ((v = instr->FindVariable(SYP_DEGRADE)))
+        deg = v->GetInt();
+    if ((v = instr->FindVariable(SYP_REDUX)))
+        red = v->GetInt();
+    if ((v = instr->FindVariable(SYP_AMP)))
+        amp = v->GetInt();
+    if ((v = instr->FindVariable(SYP_LIM)))
+        lim = v->GetInt();
+    return (mode & 0x3) ^ ((wave & 0xF) << 2) ^ ((mshape & 0xF) << 6) ^
+           ((atk & 0xFF) << 4) ^ ((dec & 0xFF) << 12) ^ ((sus & 0xFF) << 20) ^
+           ((rel & 0xFF) << 7) ^ ((rate & 0xFF) << 15) ^
+           ((depth & 0xFF) << 23) ^ ((sz & 0xFF) << 2) ^ ((mult & 0xFF) << 10) ^
+           ((warp & 0xFF) << 18) ^ ((scan & 0xFF) << 24) ^ ((tmb & 0xFF) << 3) ^
+           ((col & 0xFF) << 11) ^ ((deg & 0xFF) << 19) ^ ((red & 0xFF) << 21) ^
+           ((amp & 0xFF) << 5) ^ ((lim & 0xF) << 28);
 }
 
 void PhraseView::drawSynthOverlay(int px, int py, int pw, int ph,

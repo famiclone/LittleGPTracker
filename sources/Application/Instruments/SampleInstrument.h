@@ -18,6 +18,7 @@ enum SampleInstrumentLoopMode {
     SILM_OSC,
     //	SILM_OSCFINE,
     SILM_LOOPSYNC,
+    SILM_GRAIN,
     SILM_LAST
 };
 
@@ -51,6 +52,10 @@ enum SampleInstrumentLoopMode {
 #define SIP_IR_PAD MAKE_FOURCC('I', 'R', 'P', 'D')
 #define SIP_IR_WET MAKE_FOURCC('I', 'R', 'W', 'T')
 #define SIP_REVERSE MAKE_FOURCC('R', 'V', 'R', 'S')
+#define SIP_TRANSPOSE MAKE_FOURCC('T', 'R', 'S', 'P')
+#define SIP_DELSEND MAKE_FOURCC('D', 'L', 'S', 'D')
+#define SIP_REVSEND MAKE_FOURCC('R', 'V', 'S', 'D')
+#define SIP_TAPESEND MAKE_FOURCC('T', 'P', 'S', 'D')
 
 #define FB_BUFFER_LENGTH 3500 // (in samples)
 
@@ -92,6 +97,9 @@ public:
        int GetLoopEnd();
        virtual const char *GetName();
        virtual const char *GetFileName();
+       virtual unsigned char GetDelaySend();
+       virtual unsigned char GetReverbSend();
+       virtual unsigned char GetTapeSend();
  
   static void EnableDownsamplingLegacy();
 
@@ -135,6 +143,10 @@ private:
 	   Variable *slices_ ;
 	   Variable *sliceToEnd_ ;
 	   Variable *reverse_ ;
+	   Variable *transpose_ ;
+	   Variable *delSend_ ;
+	   Variable *revSend_ ;
+	   Variable *tapeSend_ ;
 	   Variable *interpolation_ ;
        Variable *printFx_;
        Variable *irPad_;

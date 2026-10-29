@@ -105,6 +105,18 @@ SampleInstrument::SampleInstrument() {
 	 reverse_ = new Variable("reverse", SIP_REVERSE, reverseTypes, 2, 0);
 	 Insert(reverse_);
 
+	 transpose_ = new Variable("transpose", SIP_TRANSPOSE, reverseTypes, 2, 1);
+	 Insert(transpose_);
+
+	 delSend_ = new Variable("del", SIP_DELSEND, 0);
+	 Insert(delSend_);
+
+	 revSend_ = new Variable("rev", SIP_REVSEND, 0);
+	 Insert(revSend_);
+
+	 tapeSend_ = new Variable("tape", SIP_TAPESEND, 0);
+	 Insert(tapeSend_);
+
 	 loopStart_=new WatchedVariable("loopstart",SIP_LOOPSTART,0) ;
 	 Insert(loopStart_) ;
 	 loopStart_->AddObserver(*this) ;
@@ -322,6 +334,7 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 		 case SILM_ONESHOT:
 		 case SILM_LOOP:
          case SILM_LOOP_PINGPONG:
+         case SILM_GRAIN:
              // Compute speed factor
              // if instrument sampled below 44.1Khz, should
              // travel slower in sample
@@ -330,6 +343,25 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
              rp->baseSpeed_ =
                  fl2fp(source_->GetSampleRate(rp->midiNote_) / driverRate);
              rp->reverse_ = wantReverse || (rp->rendLoopEnd_ < rp->position_);
+             if (loopmode == SILM_GRAIN) {
+                 int gMin = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+                                ? rp->rendLoopStart_
+                                : rp->rendLoopEnd_;
+                 int gMax = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+                                ? rp->rendLoopEnd_
+                                : rp->rendLoopStart_;
+                 int gSpan = gMax - gMin;
+                 if (gSpan < 4)
+                     gSpan = 4;
+                 rp->grainRng_ = 0x6D2B79F5u ^ ((unsigned int)channel * 0x9E3779B9u) ^
+                                 ((unsigned int)midinote * 131u);
+                 for (int g = 0; g < 4; g++) {
+                     rp->grainPhase_[g] = 0.25f * (float)g;
+                     rp->grainPos_[g] =
+                         (float)gMin + (float)gSpan * (0.15f + 0.20f * (float)g);
+                     rp->grainDir_[g] = (g == 1) ? -1.0f : ((g == 3) ? 2.0f : 1.0f);
+                 }
+             }
 
              break;
 
@@ -384,7 +416,9 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
         int offset = midinote - rootNote;
         if (isSliced) {
             offset = rootNote - source_->GetRootNote(rp->midiNote_);
-    }
+        } else if (transpose_ && transpose_->GetInt() == 0) {
+            offset = 0;
+        }
     while (offset > 127) {
         offset -= 12;
     }
@@ -509,6 +543,7 @@ void SampleInstrument::updateFeedback(renderParams *rp) {
 			case SILM_LOOP:
             case SILM_LOOP_PINGPONG:
             case SILM_LOOPSYNC:
+            case SILM_GRAIN:
                 rp->feedbackMode_ = FB_ADD;
                 if (offset < 0x80) {
                     offset = FB_BUFFER_LENGTH - offset - 1;
@@ -764,6 +799,7 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
                     case SILM_LOOP:
                     case SILM_OSC:
                     case SILM_LOOPSYNC:
+                    case SILM_GRAIN:
                         input = loopPosition;
                         rpReverse = (loopPosition > lastSample);
                         if (rpReverse) {
@@ -812,6 +848,7 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
                     case SILM_LOOP:
                     case SILM_OSC:
                     case SILM_LOOPSYNC:
+                    case SILM_GRAIN:
                         input = loopPosition;
                         rpReverse = (loopPosition > lastSample);
                         if (rpReverse) {
@@ -946,9 +983,96 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 					fltDelayPtr=fltDelay ;
 				}
 
+				float grainOutCh[2] = {0.0f, 0.0f};
+				if (loopMode == SILM_GRAIN) {
+					int gMin = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+					               ? rp->rendLoopStart_
+					               : rp->rendLoopEnd_;
+					int gMax = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+					               ? rp->rendLoopEnd_
+					               : rp->rendLoopStart_;
+					if (gMin < 0)
+						gMin = 0;
+					if (gMax > pcmFrames)
+						gMax = pcmFrames;
+					int gSpan = gMax - gMin;
+					if (gSpan < 4)
+						gSpan = 4;
+					float grainSizeFrames = (float)gSpan * 0.45f;
+					if (grainSizeFrames < 512.0f)
+						grainSizeFrames = 512.0f;
+					if (grainSizeFrames > 14000.0f)
+						grainSizeFrames = 14000.0f;
+					float stepSpd = fp2fl(rp->speed_);
+					if (stepSpd < 0.0f)
+						stepSpd = -stepSpd;
+					float phaseInc = stepSpd / grainSizeFrames;
+					if (phaseInc < 0.00004f)
+						phaseInc = 0.00004f;
+					short *pcmBase = (short *)wavbuf;
+					for (int g = 0; g < 4; g++) {
+						float ph = rp->grainPhase_[g] + phaseInc;
+						if (ph >= 1.0f) {
+							ph -= (float)floor(ph);
+							unsigned int r = rp->grainRng_;
+							r ^= r << 13;
+							r ^= r >> 17;
+							r ^= r << 5;
+							rp->grainRng_ = r;
+							float spray = ((r & 0xFFFF) / 65535.0f);
+							rp->grainPos_[g] = (float)gMin + spray * (float)(gSpan - 2);
+							bool revGrain = ((r >> 16) & 1) != 0;
+							if (g == 3) {
+								rp->grainDir_[g] = revGrain ? -1.498307f : 2.0f;
+							} else {
+								rp->grainDir_[g] = revGrain ? -1.0f : 1.0f;
+							}
+						}
+						rp->grainPhase_[g] = ph;
+						float w = 4.0f * ph * (1.0f - ph);
+						w = w * w * (3.0f - 2.0f * w);
+						if (g == 3)
+							w *= 0.45f;
+						float gpos = rp->grainPos_[g];
+						int idx0 = (int)gpos;
+						float frac = gpos - (float)idx0;
+						if (idx0 < gMin)
+							idx0 = gMin;
+						if (idx0 >= gMax - 1)
+							idx0 = gMax - 2;
+						if (idx0 < 0)
+							idx0 = 0;
+						int idx1 = idx0 + 1;
+						if (idx1 >= pcmFrames)
+							idx1 = pcmFrames - 1;
+						if (channelCount == 2) {
+							float l0 = (float)pcmBase[idx0 * 2];
+							float l1 = (float)pcmBase[idx1 * 2];
+							float r0 = (float)pcmBase[idx0 * 2 + 1];
+							float r1 = (float)pcmBase[idx1 * 2 + 1];
+							float panG = (g & 1) ? 0.65f : 0.35f;
+							grainOutCh[0] += (l0 + (l1 - l0) * frac) * w * (1.3f - panG);
+							grainOutCh[1] += (r0 + (r1 - r0) * frac) * w * (0.3f + panG);
+						} else {
+							float m0 = (float)pcmBase[idx0];
+							float m1 = (float)pcmBase[idx1];
+							grainOutCh[0] += (m0 + (m1 - m0) * frac) * w * 0.68f;
+						}
+						gpos += stepSpd * rp->grainDir_[g];
+						if (gpos >= (float)gMax)
+							gpos = (float)gMin + (gpos - (float)gMax);
+						if (gpos < (float)gMin)
+							gpos = (float)gMax - ((float)gMin - gpos);
+						rp->grainPos_[g] = gpos;
+					}
+				}
+
 				for (int i=0;i<channelCount;i++) 
         {
 					t2=s2 ; // move L to R if necessary
+					if (loopMode == SILM_GRAIN) {
+						s1 = fl2fp(grainOutCh[i]);
+					} else {
 					s1=i2fp(*i1++) ;
           s2=i2fp(*i2++) ;
 
@@ -975,6 +1099,7 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 								s1=s2 ;
 							} ;
 							break ;
+					}
 					}
 
 				// apply feedback mix
@@ -1673,6 +1798,9 @@ const char *SampleInstrument::GetFileName() {
 * Intended for printing where the whole name doesn't fit on screen
 */
 const char *SampleInstrument::GetName() {
+    if (userName_[0] != '\0') {
+        return userName_;
+    }
     Variable *v = FindVariable(SIP_SAMPLE);
     const char *src = v->GetString();
 
@@ -1687,7 +1815,20 @@ const char *SampleInstrument::GetName() {
     return src;
 }
 
+unsigned char SampleInstrument::GetDelaySend() {
+    return delSend_ ? (unsigned char)delSend_->GetInt() : 0;
+}
+
+unsigned char SampleInstrument::GetReverbSend() {
+    return revSend_ ? (unsigned char)revSend_->GetInt() : 0;
+}
+
+unsigned char SampleInstrument::GetTapeSend() {
+    return tapeSend_ ? (unsigned char)tapeSend_->GetInt() : 0;
+}
+
 void SampleInstrument::Purge() {
+	userName_[0] = '\0';
 	IteratorPtr<Variable> it(GetIterator()) ;
 	for (it->Begin();!it->IsDone();it->Next()) {
 		Variable &v=it->CurrentItem() ;

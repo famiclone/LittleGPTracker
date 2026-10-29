@@ -71,6 +71,9 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 			hex2char(i,hex) ;
 			data.SetAttribute("ID",hex) ;
 			data.SetAttribute("TYPE",InstrumentTypeData[instr->GetType()]) ;
+			if (instr->GetUserName()[0] != '\0') {
+				data.SetAttribute("NAME", instr->GetUserName());
+			}
 
 			IteratorPtr<Variable> it(instr->GetIterator()) ;
 			int count=0 ;
@@ -152,6 +155,11 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 						mixer->Unlock();
 					}
 				} ;
+
+				const char *instname = current->Attribute("NAME");
+				if (instname) {
+					instr->SetUserName(instname);
+				}
 
         TiXmlElement *param=current->FirstChildElement() ;
 				while (param) {
@@ -261,6 +269,7 @@ unsigned short InstrumentBank::Clone(unsigned short i) {
 			break ;
 	}
 	instrument_[next]=dst ;
+	dst->SetUserName(src->GetUserName());
 	IteratorPtr<Variable> it(src->GetIterator()) ;
 	for (it->Begin();!it->IsDone();it->Next()) {
 		Variable &srcV=it->CurrentItem() ;

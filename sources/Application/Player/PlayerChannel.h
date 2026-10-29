@@ -17,7 +17,8 @@ enum {
     CHANNEL_REVERB_MAX_SIZE = 16,
     // Max stereo frames across all comb+allpass lines at size=16
     // (bases*2 scale). Contiguous allocation for one channel.
-    CHANNEL_REVERB_BUF_FRAMES = 24000
+    CHANNEL_REVERB_BUF_FRAMES = 24000,
+    CHANNEL_TAPE_MAX_FRAMES = 2048
 };
 
 class PlayerChannel: public AudioModule {
@@ -37,6 +38,7 @@ public:
     void SetLPFFreq(unsigned short freq);
     void SetDelay(unsigned char steps, unsigned char amt);
     void SetReverb(unsigned char size, unsigned char amt);
+    void SetTape(unsigned char amt);
     void Reset();
 
   private:
@@ -46,6 +48,8 @@ public:
 	void ensureReverbBuffer() ;
 	void syncReverb() ;
 	bool applyReverb(fixed *buffer, int samplecount) ;
+	void ensureTapeBuffer() ;
+	bool applyTape(fixed *buffer, int samplecount) ;
 
 	int index_ ;
 	I_Instrument *instr_ ;
@@ -72,9 +76,25 @@ public:
     int combOff_[CHANNEL_REVERB_COMBS];
     int combLen_[CHANNEL_REVERB_COMBS];
     int combPos_[CHANNEL_REVERB_COMBS];
+    fixed combDamp_[CHANNEL_REVERB_COMBS][2];
     int apOff_[CHANNEL_REVERB_APS];
     int apLen_[CHANNEL_REVERB_APS];
     int apPos_[CHANNEL_REVERB_APS];
+
+    unsigned char tapeAmt_;
+    int tapeWritePos_;
+    float *tapeBuf_;
+    float tapeWowPhase_;
+    float tapeFlutPhase_;
+    float tapeWowDrift_;
+    float tapeFlutDrift_;
+    float tapeCrinkleEnv_;
+    float tapeDropoutEnv_;
+    float tapeLpState_[2];
+    float tapeHissLp_[2];
+    float tapeDcIn_[2];
+    float tapeDcOut_[2];
+    unsigned int tapeRng_;
 };
 
 #endif

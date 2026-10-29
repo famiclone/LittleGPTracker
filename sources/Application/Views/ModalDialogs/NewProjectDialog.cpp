@@ -28,6 +28,8 @@ NewProjectDialog::NewProjectDialog(View &view, Path currentPath,
 std::string NewProjectDialog::entryNameForCheck(const std::string &fullName) {
     if (useLgptPrefix_)
         return fullName;
+    if (currentPath_.GetPath().find("instruments") != std::string::npos)
+        return fullName + ".ins";
     return fullName + ".xml";
 }
 
@@ -243,7 +245,10 @@ void NewProjectDialog::ProcessButtonMask(unsigned short mask, bool pressed) {
                 break;
             case 2: {
                 std::string fullName = GetName();
-                if (fullName != allowedExistingName_ &&
+                bool isInstrumentDir =
+                    (currentPath_.GetPath().find("instruments") !=
+                     std::string::npos);
+                if (!isInstrumentDir && fullName != allowedExistingName_ &&
                     currentPath_.Descend(entryNameForCheck(fullName))
                         .Exists()) {
                     std::string res("Name " + std::string(name_) + " busy");

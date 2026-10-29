@@ -109,10 +109,48 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
       channel_[i]->SetVolume(fl2fp(mixer->GetChannelVolume(i) / 255.0f));
       channel_[i]->SetHPFMode((unsigned char)mixer->GetChannelHPF(i));
       channel_[i]->SetLPFFreq(mixer->GetChannelLPF(i));
-      channel_[i]->SetDelay(mixer->GetChannelDelaySteps(i),
-                            mixer->GetChannelDelayAmt(i));
-      channel_[i]->SetReverb(mixer->GetChannelReverbSize(i),
-                             mixer->GetChannelReverbAmt(i));
+
+      unsigned char dlySteps = mixer->GetChannelDelaySteps(i);
+      unsigned char dlyAmt = mixer->GetChannelDelayAmt(i);
+      unsigned char revSize = mixer->GetChannelReverbSize(i);
+      unsigned char revAmt = mixer->GetChannelReverbAmt(i);
+      unsigned char tapeAmt = mixer->GetChannelTapeAmt(i);
+
+      I_Instrument *activeInstr = channel_[i]->GetInstrument();
+      if (!activeInstr) {
+          activeInstr = lastInstrument_[i];
+      }
+      if (activeInstr) {
+          unsigned char instDel = activeInstr->GetDelaySend();
+          if (instDel > 0) {
+              if (dlySteps == 0) {
+                  dlySteps = 3;
+                  dlyAmt = instDel;
+              } else {
+                  int sum = (int)dlyAmt + (int)instDel;
+                  dlyAmt = (unsigned char)(sum > 255 ? 255 : sum);
+              }
+          }
+          unsigned char instRev = activeInstr->GetReverbSend();
+          if (instRev > 0) {
+              if (revSize == 0) {
+                  revSize = 6;
+                  revAmt = instRev;
+              } else {
+                  int sum = (int)revAmt + (int)instRev;
+                  revAmt = (unsigned char)(sum > 255 ? 255 : sum);
+              }
+          }
+          unsigned char instTape = activeInstr->GetTapeSend();
+          if (instTape > 0) {
+              int sum = (int)tapeAmt + (int)instTape;
+              tapeAmt = (unsigned char)(sum > 255 ? 255 : sum);
+          }
+      }
+
+      channel_[i]->SetDelay(dlySteps, dlyAmt);
+      channel_[i]->SetReverb(revSize, revAmt);
+      channel_[i]->SetTape(tapeAmt);
   }
   MixerService *ms=MixerService::GetInstance();
   ms->SetPregain(project_->GetPregain());

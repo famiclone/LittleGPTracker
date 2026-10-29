@@ -123,6 +123,14 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 							if (first) {
 								if (current.GetPosition()._y<first->GetPosition()._y) {
 									first=&current ;
+								} else if (current.GetPosition()._y==first->GetPosition()._y) {
+									int curDx = current.GetPosition()._x - focusPos._x;
+									if (curDx < 0) curDx = -curDx;
+									int firstDx = first->GetPosition()._x - focusPos._x;
+									if (firstDx < 0) firstDx = -firstDx;
+									if (curDx < firstDx) {
+										first=&current ;
+									}
 								} ;
 							} else {
 								first=&current ;
@@ -131,8 +139,14 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 								if (next) {
 									if (current.GetPosition()._y<next->GetPosition()._y) {
 										next=&current ;
-									} else {
-										// if both target at same height
+									} else if (current.GetPosition()._y==next->GetPosition()._y) {
+										int curDx = current.GetPosition()._x - focusPos._x;
+										if (curDx < 0) curDx = -curDx;
+										int nextDx = next->GetPosition()._x - focusPos._x;
+										if (nextDx < 0) nextDx = -nextDx;
+										if (curDx < nextDx) {
+											next=&current ;
+										}
 									} ;
 								} else {
 									next=&current ;
@@ -157,6 +171,8 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 					UIField *prev=0 ;
 					UIField *last=0 ;
 
+					GUIPoint focusPos=focus_->GetPosition() ;
+
 					IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator()) ;
 					for (it->Begin();!it->IsDone();it->Next()) {
 						UIField &current=it->CurrentItem() ;
@@ -164,6 +180,14 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 							if (last) {
 								if (current.GetPosition()._y>last->GetPosition()._y) {
 									last=&current ;
+								} else if (current.GetPosition()._y==last->GetPosition()._y) {
+									int curDx = current.GetPosition()._x - focusPos._x;
+									if (curDx < 0) curDx = -curDx;
+									int lastDx = last->GetPosition()._x - focusPos._x;
+									if (lastDx < 0) lastDx = -lastDx;
+									if (curDx < lastDx) {
+										last=&current ;
+									}
 								} ;
 							} else {
 								last=&current ;
@@ -172,8 +196,14 @@ void FieldView::ProcessButtonMask(unsigned short mask) {
 								if (prev) {
 									if (current.GetPosition()._y>prev->GetPosition()._y) {
 										prev=&current ;
-									} else {
-										// if both target at same height
+									} else if (current.GetPosition()._y==prev->GetPosition()._y) {
+										int curDx = current.GetPosition()._x - focusPos._x;
+										if (curDx < 0) curDx = -curDx;
+										int prevDx = prev->GetPosition()._x - focusPos._x;
+										if (prevDx < 0) prevDx = -prevDx;
+										if (curDx < prevDx) {
+											prev=&current ;
+										}
 									} ;
 								} else {
 									prev=&current ;

@@ -20,6 +20,7 @@ void Mixer::Clear() {
         channelDelayAmt_[i] = 0x80; // wet + feedback
         channelReverbSize_[i] = 0;  // 0=OFF, else room size 1-16
         channelReverbAmt_[i] = 0x60; // wet mix
+        channelTapeAmt_[i] = 0;      // 0=OFF, else tape effect 0-255
     }
 } ;
 
@@ -33,6 +34,7 @@ void Mixer::SaveContent(TiXmlNode *node) {
     saveHexBuffer(node, "DLYA", channelDelayAmt_, SONG_CHANNEL_COUNT);
     saveHexBuffer(node, "REVS", channelReverbSize_, SONG_CHANNEL_COUNT);
     saveHexBuffer(node, "REVA", channelReverbAmt_, SONG_CHANNEL_COUNT);
+    saveHexBuffer(node, "TAPE", channelTapeAmt_, SONG_CHANNEL_COUNT);
 } ;
 
 void Mixer::RestoreContent(TiXmlElement *element) {
@@ -55,6 +57,8 @@ void Mixer::RestoreContent(TiXmlElement *element) {
             restoreHexBuffer(current, channelReverbSize_);
         } else if (!strcmp("REVA", value)) {
             restoreHexBuffer(current, channelReverbAmt_);
+        } else if (!strcmp("TAPE", value)) {
+            restoreHexBuffer(current, channelTapeAmt_);
         }
         current = current->NextSiblingElement();
     }
