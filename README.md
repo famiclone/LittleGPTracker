@@ -1,8 +1,8 @@
-# Little Piggy Tracker
+# Swine Tracker
 
-![Piggy](https://avatars.githubusercontent.com/u/180156201?s=400&u=ebb53bdea61a025edce0c3782ac75b532dd65dd7&v=4)
+![Swine Tracker](docs/st_banner.png)
 
-**Little Piggy Tracker** (f.k.a _'LittleGPTracker'_) is a music tracker optimised to run on portable game consoles. It is currently running on Windows, MacOS (intel/arm) & Linux, PSP, Miyoo Mini, and a collection of other retro gaming handhelds.
+**Swine Tracker** (f.k.a. *Little Piggy Tracker* / *LittleGPTracker*) is a music tracker optimised to run on portable game consoles. It is currently running on Windows, MacOS (intel/arm) & Linux, PSP, Miyoo Mini, and a collection of other retro gaming handhelds.
 
 It implements the user interface of [littlesounddj](https://www.littlesounddj.com/lsd/index.php) and precedes [M8 tracker](https://www.dirtywave.com), two popular trackers greatly loved in the tracker community.
 
@@ -10,7 +10,7 @@ All versions are available for free under the [GPLv3 License](LICENSE). If you l
 
 ## About This Fork
 
-This repository (`famiclone/LittleGPTracker`) is developed independently. It remains a derivative of the work of the original author `m-.-n` aka [Marc Nostromo](https://github.com/Mdashdotdashn/LittleGPTracker), and later community forks; their releases of the source code laid the foundation for everything here.
+This repository (`famiclone/SwineTracker`) is developed independently. It remains a derivative of the work of the original author `m-.-n` aka [Marc Nostromo](https://github.com/Mdashdotdashn/LittleGPTracker), and later community forks; their releases of the source code laid the foundation for everything here.
 
 Active development happens on **`develop`**. **`main`** tracks stable merges. There is no ongoing sync with other public forks unless explicitly decided.
 
@@ -24,7 +24,7 @@ just to be safe &#9829;
 
 Latest releases from this fork:
 
-- [Releases](https://github.com/famiclone/LittleGPTracker/releases)
+- [Releases](https://github.com/famiclone/SwineTracker/releases)
 
 
 ## Documentation
@@ -34,9 +34,9 @@ All the relevant documentation can be found in [Docs](docs) directory.
 Recommended reading to get you started:
 
 - [**Famiclone fork features**](docs/wiki/FORK_FEATURES.md) — Settings/Appearance, mixer FX, synth/SHAPES, Brick, commands
-- [What is Little Piggy Tracker](docs/wiki/What-is-LittlePiggyTracker.md)
+- [What is Swine Tracker](docs/wiki/What-is-SwineTracker.md)
 - [Quick-Start Guide](docs/wiki/quick_start_guide.md)
-- [Little Piggy Tracker Configuration](docs/LittlePiggyTrackerConf.md)
+- [Swine Tracker Configuration](docs/SwineTrackerConf.md)
 - [Tips and Tricks](docs/wiki/tips_and_tricks.md)
 - [CHANGELOG](CHANGELOG)
 

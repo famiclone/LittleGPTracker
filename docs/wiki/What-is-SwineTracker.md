@@ -1,13 +1,13 @@
-# What is LittleGPTracker?
-[*LittleGPTracker*](https://www.littlegptracker.com/) *(a.k.a piggy tracker) is a sample based tracker originally programed for the gamepark handhelds and PSP but now also available for Microsoft Windows, ~~Mac OSX~~ and an assortment of more modern handheld devices. It implements a user interface similar to the refined track-by-joypad software* [*littlesounddj*](http://www.littlesounddj.com/)*. Piggy currently supports 8 monophonic 8Bit/16Bit/44.1Khz stereo channels as well as 16 channel midi output. Piggy is currently under development and the latest versions of the program (along with beta builds) can be found at* [*https://github.com/djdiskmachine/LittleGPTracker/releases/*](https://github.com/djdiskmachine/LittleGPTracker/releases/)*.*
-You are reading a reference manual for those who are comfortable with LSDj or trackers in general. An alternative introduction to LittleGPTracker is our very own [quick_start_guide](quick_start_guide.md). If you have a question this manual does not answer, please join the [Discord](https://discord.com/invite/NMQVbrFgr3) or in #hexawe on efnet. Don't forget to check out the advanced [tips_and_tricks](tips_and_tricks.md)
+# What is SwineTracker?
+[*Swine Tracker*](https://github.com/famiclone/SwineTracker) *(f.k.a. Little Piggy Tracker / piggy tracker) is a sample based tracker originally programed for the gamepark handhelds and PSP but now also available for Microsoft Windows, Mac OS, and an assortment of more modern handheld devices. It implements a user interface similar to the refined track-by-joypad software* [*littlesounddj*](http://www.littlesounddj.com/)*. Swine Tracker currently supports 8 monophonic 8Bit/16Bit/44.1Khz stereo channels as well as 16 channel midi output. Builds from this fork are at* [*https://github.com/famiclone/SwineTracker/releases*](https://github.com/famiclone/SwineTracker/releases)*. Historical community releases remain at* [*https://github.com/djdiskmachine/LittleGPTracker/releases*](https://github.com/djdiskmachine/LittleGPTracker/releases)*.*
+You are reading a reference manual for those who are comfortable with LSDj or trackers in general. An alternative introduction to SwineTracker is our very own [quick_start_guide](quick_start_guide.md). If you have a question this manual does not answer, please join the [Discord](https://discord.com/invite/NMQVbrFgr3) or in #hexawe on efnet. Don't forget to check out the advanced [tips_and_tricks](tips_and_tricks.md)
 If you want to grab some sounds to get off the ground quickly, or want to hear and see what other people have been doing with piggy tracker, download some of the .zip archives from [http://hexawe.net](http://hexawe.net/)!
 
 # Files
 ## Installation
 
 Grab the installation package for your platform from the [download page](https://github.com/djdiskmachine/LittleGPTracker/releases/). If the package contains an INSTALL_HOW_TO.txt, follow those instructions. Otherwise, extract the files from the archive & copy it where you like. After that you can run the executable type for your system, located in the lgpt root or in the /bin folder. linux users may need to set the binary as executable (chmod a+x lgpt.deb-exe).
-If you're using PPSSPP, LittleGPTracker might boot with a black screen. To workaround
+If you're using PPSSPP, SwineTracker might boot with a black screen. To workaround
 this, set Software rendering **or** change rendering resolution after LGPT has started
 
 ## Directory Structure
@@ -47,7 +47,7 @@ After that you can copy additional wavs to the lgptRoot/lgptProject/samples dire
 
 **Use 8 or 16 Bit wav files, any sampling frequency, mono or stereo**. 8bit samples are converted to 16bit at load time for compatibility with the engine (you can save space in storage but not in RAM).
 
-**Piggy now supports .sf2 Soundfonts.** You may import SoundFonts similarly to samples by placing them in your sample directory. Note that SoundFonts have an inverted colours in the sample import dialog. Use PROGRAM CHANGE commands to load different patches. Loop points are automatically loaded, but you'll need to make VOLM setting to adjust decay. By default, at most 3 are loaded per project; this limit may be increased by recompiling LittleGPTracker with the compiler flag `-DMAXLOADEDBANKS=X`, where `X` is the desired limit.
+**Piggy now supports .sf2 Soundfonts.** You may import SoundFonts similarly to samples by placing them in your sample directory. Note that SoundFonts have an inverted colours in the sample import dialog. Use PROGRAM CHANGE commands to load different patches. Loop points are automatically loaded, but you'll need to make VOLM setting to adjust decay. By default, at most 3 are loaded per project; this limit may be increased by recompiling SwineTracker with the compiler flag `-DMAXLOADEDBANKS=X`, where `X` is the desired limit.
 
 ## New project
 
@@ -88,12 +88,12 @@ Important Points to Remember:
 ## config.xml
 
 The config file is used to tweak certain global parameters of the application. It is not mandatory to have one but it will allow you to change key mapping, color scheme, key repeat setting and other.
-For more details check out the [configuration](../LittlePiggyTrackerConf.md) page
+For more details check out the [configuration](../SwineTrackerConf.md) page
 
 # Controls & Moves
 
-If you want to change the default mapping in LGPT, you will want to edit the config.xml. More information can be found on this on the [configuration](../LittlePiggyTrackerConf.md)
-If you want to augment the mapping controls to add a usb footpedal, another joystick, macros using additional buttons on your device, or even control of piggy via midi commands, check out [mapping](../LittlePiggyTrackerConf.md#mappingxml-guide)
+If you want to change the default mapping in LGPT, you will want to edit the config.xml. More information can be found on this on the [configuration](../SwineTrackerConf.md)
+If you want to augment the mapping controls to add a usb footpedal, another joystick, macros using additional buttons on your device, or even control of piggy via midi commands, check out [mapping](../SwineTrackerConf.md#mappingxml-guide)
 
 ## Key Mapping
 
@@ -105,7 +105,7 @@ If you want to augment the mapping controls to add a usb footpedal, another joys
 - RT: Right trigger (shoulder button).
 - LT: Left trigger (shoulder button).
 
-*GP2X Specific notice*: The A & B buttons are “inverted” (when compared to GP32 and LSDJ on Gameboy). This can be modified in the [configuration](../LittlePiggyTrackerConf.md).
+*GP2X Specific notice*: The A & B buttons are “inverted” (when compared to GP32 and LSDJ on Gameboy). This can be modified in the [configuration](../SwineTrackerConf.md).
 
 The moves are close to what you would pull in lsdj, but shoulder buttons replace the lsdj SELECT key. Most of the time, the equivalent of SELECT is the shoulder button opposite the other buttons you're pushing. For example SELECT+B is LT+B, SELECT+RIGHT is RT+RIGHT.
 

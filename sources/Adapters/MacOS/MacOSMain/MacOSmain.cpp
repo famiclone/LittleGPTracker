@@ -9,7 +9,7 @@ int main(int argc,char *argv[])
     MacOSSystem::Boot(argc,argv) ;
 
 	SDLCreateWindowParams params ;
-	params.title="littlegptracker" ;
+	params.title="Swine Tracker" ;
 	params.cacheFonts_=false ;
 
 	Application::GetInstance()->Init(params) ;

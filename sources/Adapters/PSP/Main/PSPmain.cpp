@@ -65,7 +65,7 @@ int main(int argc,char *argv[])
 	PSPSystem::Boot(argc,argv) ;
 
 	SDLCreateWindowParams params ;
-	params.title="littlegptracker" ;
+	params.title="Swine Tracker" ;
 	params.cacheFonts_=false ;
     params.framebuffer_=false ;
 	Application::GetInstance()->Init(params) ;

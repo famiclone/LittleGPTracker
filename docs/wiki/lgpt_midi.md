@@ -1,4 +1,4 @@
-LGPT supports most of the basic midi commands. It can send note on/off, volume information, continuous controller data and MIDI program change. More information on this can be found in the **[reference manual](./What-is-LittlePiggyTracker.md#commands)**. Platform specific information follows.
+LGPT supports most of the basic midi commands. It can send note on/off, volume information, continuous controller data and MIDI program change. More information on this can be found in the **[reference manual](./What-is-SwineTracker.md#commands)**. Platform specific information follows.
 
 ## GP2x
 

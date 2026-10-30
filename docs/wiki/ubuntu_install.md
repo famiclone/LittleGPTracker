@@ -12,7 +12,7 @@ sudo apt-get install libasound2-plugins:i386
 
 Once these have been installed, you can install:
 
-1. Download and extract the [stable release](http://littlegptracker.com/download.php "http://littlegptracker.com/download.php").
+1. Download and extract the [stable release](http://swinetracker.com/download.php "http://swinetracker.com/download.php").
 2. Make the `lgpt.deb-exe` file in `DEB/bin/` folder executable. This can be done in most desktop environments by right clicking the file, going to properties, and then permissions. Alternatively, you can do this from the command line by using "`chmod +x lgpt.deb-exe`" inside the `DEB/bin/` folder.
 3. Place all projects, your config.xml and mapping.xml (if you have them) in the `DEB/` directory. All samples go in the `DEB/samplelib/` directory unless otherwise specified in your config.xml.
 4. run the `lgpt.deb-exe` in the `DEB/bin/` folder.

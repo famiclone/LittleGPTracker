@@ -20,7 +20,7 @@ Before submitting a PR, ensure:
   - Bump BUILD_COUNT (`#define BUILD_COUNT "3-bacon3"`) if asked to by repo maintainer.
   
 - [ ] **Documentation updated**:
-  - Update `docs/wiki/What-is-LittlePiggyTracker.md` reflecting your changes
+  - Update `docs/wiki/What-is-SwineTracker.md` reflecting your changes
   - Update CHANGELOG
   
 - [ ] **Clean commit history**:

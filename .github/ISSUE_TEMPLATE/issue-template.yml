@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for helping improve Little Piggy Tracker by submitting this report.
+        Thank you for helping improve Swine Tracker by submitting this report.
         Feature requests submitted here will be considered for future updates as time and resources allow.
   - type: textarea
     id: logs
@@ -31,7 +31,7 @@ body:
     id: version
     attributes:
       label: Build version
-      description: Enter the Little Piggy Tracker version.
+      description: Enter the Swine Tracker version.
     validations:
       required: true
   - type: textarea

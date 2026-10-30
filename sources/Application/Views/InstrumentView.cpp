@@ -367,7 +367,7 @@ void InstrumentView::OnSaveInstrumentFile(const char *name) {
         return;
     }
 
-    std::string content = "# LittleGPTracker Instrument (.ins)\n";
+    std::string content = "# Swine Tracker Instrument (.ins)\n";
     InstrumentType it = current_->GetType();
     const char *typeStr = "SAMPLER";
     if (it == IT_SYNTH) {

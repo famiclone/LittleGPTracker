@@ -7,7 +7,7 @@ int main(int argc,char *argv[]) {
 	WSDLSystem::Boot(argc,argv);
 
 	SDLCreateWindowParams params;
-	params.title="littlegptracker";
+	params.title="Swine Tracker";
 	params.cacheFonts_=true;
 
 	Application::GetInstance()->Init(params);

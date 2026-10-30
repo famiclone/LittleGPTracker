@@ -35,7 +35,7 @@
 ----------
 
 
-LittleGPTracker can be configured in a various ways through a series of flags. These flags can either be defined temporarely at the command line or permanently in a config file called `config.xml`.
+SwineTracker can be configured in a various ways through a series of flags. These flags can either be defined temporarely at the command line or permanently in a config file called `config.xml`.
 
 NOTE that values do not necessarily affect all platforms. Also, if one of the values isn't working for you it's possible that you need to get the latest ~~[ghetto build](https://github.com/NinjasCL-archive/LittleGPTracker/releases)~~ [build](https://github.com/djdiskmachine/LittleGPTracker/releases/latest).
 
@@ -79,7 +79,7 @@ Then you can add as many config flags in between as you like:
 
 For \[**WIN**/**DEB**/**OSX**\]
 
-To start LittleGPTracker in fullscreen:
+To start SwineTracker in fullscreen:
 
 ```xml
 <CONFIG>
@@ -97,7 +97,7 @@ Be careful as large values take a lot of juice and interfere with sound playback
 
 ### Auto-Load Last Project
 
-By default, LittleGPTracker will automatically load the last project that was open on the previous session. To disable this behavior and show the project selection dialog instead, set:
+By default, SwineTracker will automatically load the last project that was open on the previous session. To disable this behavior and show the project selection dialog instead, set:
 
 ```xml
 <AUTO_LOAD_LAST value='NO' />
@@ -111,7 +111,7 @@ To explicitly enable (default behavior):
 
 ## Screen Colors
 
-LittleGPTracker uses 6 colours to do all the drawing. If you want, you can redefine them using the following parameters:
+SwineTracker uses 6 colours to do all the drawing. If you want, you can redefine them using the following parameters:
 
 - `BACKGROUND`: Color of the background
 - `FOREGROUND`: Color of the foreground
@@ -466,7 +466,7 @@ open up the terminal
 
 go wherever you downloaded piggy and on the command line type:
 ```
-./LittleGPTracker.app/Contents/MacOS/LittleGPTracker -DUMPEVENT=YES
+./SwineTracker.app/Contents/MacOS/SwineTracker -DUMPEVENT=YES
 ```
 hit the buttons you want to use and copy the values piggy spits out
 

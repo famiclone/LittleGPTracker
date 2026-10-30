@@ -2,7 +2,7 @@
 
 ## This repository
 
-This is an independent fork under `famiclone/LittleGPTracker`. Do not sync, rebase onto, or open PRs against the original upstream (`djdiskmachine/LittleGPTracker` or earlier ancestors) unless the human explicitly asks.
+This is an independent fork under `famiclone/SwineTracker` (product name: **Swine Tracker**). Do not sync, rebase onto, or open PRs against the original upstream (`djdiskmachine/LittleGPTracker` or earlier ancestors) unless the human explicitly asks.
 
 - Default integration branch: **`develop`**
 - Stable / release branch: **`main`**

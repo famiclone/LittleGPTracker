@@ -108,7 +108,7 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p) {
     Trace::Log("DISPLAY", "Creating SDL Window (%d,%d)", screenRect_.Width(),
                screenRect_.Height());
     window_ = SDL_CreateWindow(
-        "LittleGPTracker", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+        "Swine Tracker", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
         screenRect_.Width(), screenRect_.Height(),
         fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_SHOWN);
     NAssert(window_);

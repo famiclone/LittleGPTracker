@@ -141,7 +141,7 @@ open up the terminal
 
 go wherever you downloaded piggy and on the command line type:
 
-./LittleGPTracker.app/Contents/MacOS/LittleGPTracker -DUMPEVENT=YES
+./SwineTracker.app/Contents/MacOS/SwineTracker -DUMPEVENT=YES
 
 hit the buttons you want to use and copy the values piggy spits out
 

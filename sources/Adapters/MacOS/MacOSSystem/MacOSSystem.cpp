@@ -113,7 +113,7 @@ void MacOSSystem::installAliases()
 	std::string asciiPath = path;
 	std::string directoryPath;
 
-	// Xcode .app: .../LittleGPTracker.app/Contents/MacOS/LittleGPTracker
+	// Xcode .app: .../SwineTracker.app/Contents/MacOS/SwineTracker
 	// -> parent of the .app (release layout puts config/samplelib there).
 	std::string::size_type appPos = asciiPath.rfind(".app/");
 	if (appPos != std::string::npos) {

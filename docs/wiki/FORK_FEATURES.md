@@ -1,6 +1,6 @@
 # Features
 
-Features added in [`famiclone/LittleGPTracker`](https://github.com/famiclone/LittleGPTracker) on top of the community Little Piggy Tracker line. Development targets **`develop`**; **`main`** holds stable merges.
+Features added in [`famiclone/SwineTracker`](https://github.com/famiclone/SwineTracker) (**Swine Tracker**) on top of the community Little Piggy Tracker line. Development targets **`develop`**; **`main`** holds stable merges.
 
 Samples must be **8- or 16-bit PCM WAV** (stereo OK). 24-bit files will not load.
 
@@ -173,7 +173,7 @@ Existing commands (ARPG, FLTR, LPOF, SLCE, …) remain as in upstream docs.
 
 ## See also
 
-- [What is Little Piggy Tracker](What-is-LittlePiggyTracker.md) — base UI reference (updated where fork behaviour differs)
+- [What is Swine Tracker](What-is-SwineTracker.md) — base UI reference (updated where fork behaviour differs)
 - [config.xml](config_xml.md) — colours and global flags
 - [tips and tricks](tips_and_tricks.md) — slices, oscillator, looper sync
 - Root [CHANGELOG](../../CHANGELOG) — versioned notes for this fork
