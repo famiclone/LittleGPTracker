@@ -17,7 +17,7 @@ this, set Software rendering **or** change rendering resolution after LGPT has s
   - **stderr.txt** - debugging output file (created at startup and removed upon exit)
   - **stdout.txt** - debugging output file (created at startup and removed upon exit)
 - **README.txt** - credits and changelog
-- **config_xml.md** - config.xml documentation
+- **[SwineTrackerConf.md](../SwineTrackerConf.md)** - config.xml / mapping documentation
 - **INSTALL_HOW_TO.txt** - How to install for tricky systems
 - **BETA** - Example song by djdiskmachine showcasing some new featres. Note: all projects start with lgpt_*
   - **Samples** - each project loads wav files from it's own Samples directory

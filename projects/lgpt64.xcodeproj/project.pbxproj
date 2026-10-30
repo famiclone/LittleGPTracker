@@ -190,7 +190,7 @@
 		73292F980DBE79FB007363BD /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = /System/Library/Frameworks/CoreAudio.framework; sourceTree = "<absolute>"; };
 		73292F990DBE79FB007363BD /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = /System/Library/Frameworks/CoreFoundation.framework; sourceTree = "<absolute>"; };
 		73292F9A0DBE79FB007363BD /* CoreMIDI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMIDI.framework; path = /System/Library/Frameworks/CoreMIDI.framework; sourceTree = "<absolute>"; };
-		734B75CA151D2F9900CC5A14 /* revision.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = revision.txt; path = ../../LittleGPTracker/docs/revision.txt; sourceTree = SOURCE_ROOT; };
+		734B75CA151D2F9900CC5A14 /* revision.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = revision.txt; path = ../../LittleGPTracker/docs/archive/revision.txt; sourceTree = SOURCE_ROOT; };
 		734C2827151E1E190072494B /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
 		734FFEF5166DF384003FD4C3 /* Result.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Result.cpp; sourceTree = "<group>"; };
 		734FFEF6166DF384003FD4C3 /* Result.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Result.h; sourceTree = "<group>"; };

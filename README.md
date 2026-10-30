@@ -1,6 +1,6 @@
 # Swine Tracker
 
-![Swine Tracker](docs/st_banner.png)
+![Swine Tracker](docs/assets/st_banner.png)
 
 **Swine Tracker** (f.k.a. *Little Piggy Tracker* / *LittleGPTracker*) is a music tracker optimised to run on portable game consoles. It is currently running on Windows, MacOS (intel/arm) & Linux, PSP, Miyoo Mini, and a collection of other retro gaming handhelds.
 
@@ -43,7 +43,7 @@ Latest releases from this fork:
 
 ## Documentation
 
-All the relevant documentation can be found in [Docs](docs) directory.
+All the relevant documentation can be found in the [Docs](docs) directory ([index](docs/README.md)).
 
 Recommended reading to get you started:
 
@@ -53,6 +53,23 @@ Recommended reading to get you started:
 - [Swine Tracker Configuration](docs/SwineTrackerConf.md)
 - [Tips and Tricks](docs/wiki/tips_and_tricks.md)
 - [CHANGELOG](CHANGELOG)
+
+## Developing / launch layout
+
+Build from `projects/` (`make PLATFORM=…`). Runtime paths matter:
+
+- **`bin:`** — directory of the executable (`config.xml`, `last_project`, `last_scheme`, `mapping.xml`, logs).
+- **`root:`** — on Linux/DEB this is the **process cwd**; on macOS it is the directory that holds the binary (or the parent of the `.app`). Song folders (`lgpt_*`), `schemes/`, and `samplelib/` are looked up under `root:`.
+
+For a typical desktop/dev run from `projects/`, keep cwd at `projects/` (or the folder that contains `schemes/` and your songs). Session files and `lgpt_*` songs are gitignored — do not commit them. Bundled colour schemes live in [`projects/schemes/`](projects/schemes/).
+
+Technical binary/song names still use the historical `lgpt` / `lgpt_` prefixes for save-format compatibility; the product name is Swine Tracker.
+
+**Tree notes**
+
+- [`libs/`](libs/) holds **legacy prebuilt** link libraries for old Windows / GP2X toolchains. Modern `MACOS` / Linux / `TG5040` builds use system SDL2 instead.
+- [`bitmaps/`](bitmaps/) is GP2X button overlays only (not general app art). App fonts/icons live under [`sources/Resources/`](sources/Resources/); the window icon file expected next to the binary is still named `lgpt_icon.bmp` (copy from `sources/Resources/lgpt_icon.bmp` when packaging).
+- [`projects/`](projects/) is the build and packaging root. Song folders named `lgpt_*` are user data under `root:`, not “the projects/ directory” itself.
 
 ## Features per platform
 
