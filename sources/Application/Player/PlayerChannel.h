@@ -1,4 +1,3 @@
-
 #ifndef _PLAYER_CHANNEL_H_
 #define _PLAYER_CHANNEL_H_
 
@@ -41,6 +40,8 @@ public:
     void SetDelay(unsigned char steps, unsigned char amt);
     void SetReverb(unsigned char size, unsigned char amt);
     void SetTape(unsigned char amt);
+    void SetSidechain(unsigned char src, unsigned char amt);
+    float GetSidechainEnv() const { return scEnv_; }
     void Reset();
 
   private:
@@ -98,6 +99,11 @@ public:
     float tapeDcIn_[2];
     float tapeDcOut_[2];
     unsigned int tapeRng_;
+
+    unsigned char scSrc_;
+    unsigned char scAmt_;
+    float scEnv_;
+    float scGain_;
 };
 
 #endif

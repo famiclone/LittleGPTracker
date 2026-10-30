@@ -1,6 +1,7 @@
 #include "PlayerChannel.h"
 #include "Application/Mixer/MixerService.h"
 #include "Application/Model/Mixer.h"
+#include "Application/Player/PlayerMixer.h"
 #include "Application/Player/SyncMaster.h"
 #include "Application/Utils/fixed.h"
 #include <math.h>
@@ -73,6 +74,10 @@ PlayerChannel::PlayerChannel(int index) {
     tapeDcIn_[0] = tapeDcIn_[1] = 0.0f;
     tapeDcOut_[0] = tapeDcOut_[1] = 0.0f;
     tapeRng_ = 0xA341316Cu ^ ((unsigned int)index * 0x6D2B79F5u);
+    scSrc_ = 0xFF;
+    scAmt_ = 0;
+    scEnv_ = 0.0f;
+    scGain_ = 1.0f;
 }
 
 PlayerChannel::~PlayerChannel() {
@@ -554,8 +559,14 @@ bool PlayerChannel::applyTape(fixed *buffer, int samplecount) {
     return any;
 }
 
+void PlayerChannel::SetSidechain(unsigned char src, unsigned char amt) {
+    scSrc_ = src;
+    scAmt_ = amt;
+}
+
 bool PlayerChannel::Render(fixed *buffer, int samplecount) {
     if (muted_) {
+        scEnv_ = 0.0f;
         if (sourceModule_) {
             sourceModule_->Render(buffer, samplecount);
         } else if (instr_) {
@@ -568,6 +579,7 @@ bool PlayerChannel::Render(fixed *buffer, int samplecount) {
     if (sourceModule_) {
         gotInstr = sourceModule_->Render(buffer, samplecount);
         if (muted_) {
+            scEnv_ = 0.0f;
             return false;
         }
     } else if (instr_) {
@@ -575,6 +587,7 @@ bool PlayerChannel::Render(fixed *buffer, int samplecount) {
         gotInstr = instr_->Render(index_, buffer, samplecount,
                                   tableSlice | (muted_ << 1));
         if (muted_) {
+            scEnv_ = 0.0f;
             return false;
         }
     }
@@ -618,13 +631,42 @@ bool PlayerChannel::Render(fixed *buffer, int samplecount) {
                 lpfPrevOutput_[1] = out_r;
             }
         }
-    } else if (!muted_ &&
-               (delaySteps_ != 0 || reverbSize_ != 0 || tapeAmt_ != 0)) {
-        for (int i = 0; i < samplecount * 2; i++) {
-            buffer[i] = i2fp(0);
+
+        // Update sidechain trigger envelope follower (fast attack, smooth release)
+        if (!sourceModule_) {
+            float env = scEnv_;
+            const float inv32768 = 1.0f / 32768.0f;
+            for (int n = 0; n < samplecount; n++) {
+                float aL = (float)fabs(fp2fl(buffer[n * 2])) * inv32768;
+                float aR = (float)fabs(fp2fl(buffer[n * 2 + 1])) * inv32768;
+                float pk = (aL > aR) ? aL : aR;
+                if (pk > env) {
+                    env += 0.025f * (pk - env);
+                } else {
+                    env *= 0.99978f;
+                }
+            }
+            if (env > 1.5f)
+                env = 1.5f;
+            scEnv_ = env;
         }
     } else {
-        return false;
+        // Smoothly decay sidechain envelope when channel is silent
+        if (scEnv_ > 0.0001f) {
+            for (int n = 0; n < samplecount; n++) {
+                scEnv_ *= 0.99978f;
+            }
+        } else {
+            scEnv_ = 0.0f;
+        }
+        if (!muted_ &&
+            (delaySteps_ != 0 || reverbSize_ != 0 || tapeAmt_ != 0)) {
+            for (int i = 0; i < samplecount * 2; i++) {
+                buffer[i] = i2fp(0);
+            }
+        } else {
+            return false;
+        }
     }
 
     if (muted_) {
@@ -644,6 +686,40 @@ bool PlayerChannel::Render(fixed *buffer, int samplecount) {
 
     if (!gotInstr && !gotFx) {
         return false;
+    }
+
+    // Apply sidechain ducking from user-selected source channel
+    if (scSrc_ < SONG_CHANNEL_COUNT && scSrc_ != (unsigned char)index_ &&
+        scAmt_ > 0) {
+        float trigEnv =
+            PlayerMixer::GetInstance()->GetChannelSidechainEnv((int)scSrc_);
+        float depth = (float)scAmt_ / 255.0f;
+        float envDrive = trigEnv * 2.8f;
+        if (envDrive > 1.0f)
+            envDrive = 1.0f;
+        float targetGain = 1.0f - depth * envDrive;
+        if (targetGain < 0.02f)
+            targetGain = 0.02f;
+        float g = scGain_;
+        for (int n = 0; n < samplecount; n++) {
+            float coeff = (targetGain < g) ? 0.018f : 0.0005f;
+            g += coeff * (targetGain - g);
+            fixed fg = fl2fp(g);
+            int idx = n * 2;
+            buffer[idx] = fp_mul(buffer[idx], fg);
+            buffer[idx + 1] = fp_mul(buffer[idx + 1], fg);
+        }
+        scGain_ = g;
+    } else if (scGain_ < 0.999f) {
+        float g = scGain_;
+        for (int n = 0; n < samplecount; n++) {
+            g += 0.002f * (1.0f - g);
+            fixed fg = fl2fp(g);
+            int idx = n * 2;
+            buffer[idx] = fp_mul(buffer[idx], fg);
+            buffer[idx + 1] = fp_mul(buffer[idx + 1], fg);
+        }
+        scGain_ = g;
     }
 
     if (volume_ != i2fp(1)) {
@@ -765,4 +841,8 @@ void PlayerChannel::Reset() {
     if (tapeBuf_) {
         memset(tapeBuf_, 0, sizeof(float) * CHANNEL_TAPE_MAX_FRAMES * 2);
     }
+    scSrc_ = 0xFF;
+    scAmt_ = 0;
+    scEnv_ = 0.0f;
+    scGain_ = 1.0f;
 }

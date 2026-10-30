@@ -30,6 +30,42 @@ int SampleInstrument::lastMidiNote_[SONG_CHANNEL_COUNT]= {
 
 #define KRATE_SAMPLE_COUNT 100
 
+static inline unsigned int nextSliceRng(unsigned int &rng) {
+	unsigned int r = rng;
+	if (r == 0)
+		r = 0x9E3779B9u;
+	r ^= r << 13;
+	r ^= r >> 17;
+	r ^= r << 5;
+	rng = r;
+	return r;
+}
+
+static inline int pickRandomSlice(unsigned int &rng, int defaultSlice,
+                                  int sliceCount, int rndAmt) {
+	if (sliceCount <= 1 || rndAmt <= 0) {
+		return defaultSlice;
+	}
+	unsigned int r1 = nextSliceRng(rng);
+	if ((int)(r1 & 0xFF) < rndAmt) {
+		int maxRadius = 1 + ((sliceCount - 1) * rndAmt) / 255;
+		if (maxRadius > sliceCount - 1)
+			maxRadius = sliceCount - 1;
+		if (maxRadius < 1)
+			maxRadius = 1;
+		unsigned int r2 = nextSliceRng(rng);
+		int span = maxRadius * 2;
+		int pick = (int)(r2 % (unsigned int)span);
+		int delta = (pick < maxRadius) ? (pick - maxRadius)
+		                               : (pick - maxRadius + 1);
+		int target = (defaultSlice + delta) % sliceCount;
+		if (target < 0)
+			target += sliceCount;
+		return target;
+	}
+	return defaultSlice;
+}
+
 SampleInstrument::SampleInstrument() {
 
 // Initialize instruments settings
@@ -104,6 +140,9 @@ SampleInstrument::SampleInstrument() {
 	 sliceToEnd_ =
 	     new Variable("slicetoend", SIP_SLICETOEND, sliceToEndTypes, 2, 0);
 	 Insert(sliceToEnd_);
+
+	 sliceRnd_ = new Variable("slicernd", SIP_SLICERND, 0);
+	 Insert(sliceRnd_);
 
 	 reverse_ = new Variable("reverse", SIP_REVERSE, reverseTypes, 2, 0);
 	 Insert(reverse_);
@@ -261,6 +300,11 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
      int isSliced = slices_->GetInt() > 1;
      bool wantReverse = (reverse_ && reverse_->GetInt() != 0);
      rp->sliceToEnd_ = false;
+     rp->sliceRandomActive_ = false;
+     static unsigned int sSliceSeedCounter = 0xA341316Cu;
+     sSliceSeedCounter = sSliceSeedCounter * 1664525u + 1013904223u;
+     rp->sliceRng_ = sSliceSeedCounter ^ ((unsigned int)channel * 0x9E3779B9u) ^
+                     ((unsigned int)midinote * 0x6D2B79F5u);
 
      int domainStart = start_->GetInt();
      if (domainStart < 0 || domainStart >= rp->sampleSize_) {
@@ -296,12 +340,37 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 		 // of the active segment as a oneshot (see Render — no loop wrap).
 		 if (sliceToEnd_->GetInt()) {
 			 rp->sliceToEnd_ = true;
-			 if (wantReverse) {
-				 segStart = domainStart;
-				 segEnd = sliceEnd;
+			 rp->sliceDomainStart_ = domainStart;
+			 rp->sliceDomainEnd_ = domainEnd;
+			 rp->sliceCount_ = slices_->GetInt();
+			 rp->sliceLen_ = slice;
+			 int trigSlice = rp->midiNote_;
+			 rp->slicesRemaining_ =
+			     wantReverse ? (trigSlice + 1) : (rp->sliceCount_ - trigSlice);
+			 if (rp->slicesRemaining_ < 1) {
+				 rp->slicesRemaining_ = 1;
+			 }
+			 int rndAmt = sliceRnd_ ? sliceRnd_->GetInt() : 0;
+			 if (rndAmt > 0) {
+				 rp->sliceRandomActive_ = true;
+				 rp->curSlice_ = pickRandomSlice(rp->sliceRng_, trigSlice,
+				                                 rp->sliceCount_, rndAmt);
+				 segStart = domainStart + rp->curSlice_ * slice;
+				 segEnd = (rp->curSlice_ >= rp->sliceCount_ - 1)
+				              ? domainEnd
+				              : (segStart + slice);
+				 if (segEnd > domainEnd) {
+					 segEnd = domainEnd;
+				 }
 			 } else {
-				 segStart = sliceStart;
-				 segEnd = domainEnd;
+				 rp->curSlice_ = trigSlice;
+				 if (wantReverse) {
+					 segStart = domainStart;
+					 segEnd = sliceEnd;
+				 } else {
+					 segStart = sliceStart;
+					 segEnd = domainEnd;
+				 }
 			 }
 		 } else {
 			 segStart = sliceStart;
@@ -700,10 +769,13 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 
 		 // Loop mode. Sliced "to end" always finishes at sample end — wrapping
 		 // from the tail back to a mid-sample slice start is a hard click train.
-		 SampleInstrumentLoopMode loopMode=(SampleInstrumentLoopMode)loopMode_->GetInt() ;
+		 SampleInstrumentLoopMode origLoopMode =
+		     (SampleInstrumentLoopMode)loopMode_->GetInt();
+		 SampleInstrumentLoopMode loopMode = origLoopMode;
 		 if (rp->sliceToEnd_) {
 			 loopMode = SILM_ONESHOT ;
 		 }
+		 int curSliceRnd = sliceRnd_ ? sliceRnd_->GetInt() : 0;
 
 		 // Interpolation
 
@@ -822,9 +894,66 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 		while (count>0) {
 
 			// look where we are, if we need to
+			bool reachedSliceEnd = (!rpReverse) ? (input >= lastSample)
+			                                    : (input < lastSample);
+			if (reachedSliceEnd && rp->sliceRandomActive_ && curSliceRnd > 0 &&
+			    rp->sliceCount_ > 1) {
+				if (origLoopMode == SILM_ONESHOT) {
+					rp->slicesRemaining_--;
+				}
+				if (origLoopMode != SILM_ONESHOT || rp->slicesRemaining_ > 0) {
+					int seqNext =
+					    rpReverse ? (rp->curSlice_ - 1) : (rp->curSlice_ + 1);
+					if (seqNext < 0)
+						seqNext = rp->sliceCount_ - 1;
+					if (seqNext >= rp->sliceCount_)
+						seqNext = 0;
+					int nextSl = pickRandomSlice(rp->sliceRng_, seqNext,
+					                             rp->sliceCount_, curSliceRnd);
+					rp->curSlice_ = nextSl;
+					int sStart = rp->sliceDomainStart_ + nextSl * rp->sliceLen_;
+					int sEnd = (nextSl >= rp->sliceCount_ - 1)
+					               ? rp->sliceDomainEnd_
+					               : (sStart + rp->sliceLen_);
+					if (sEnd > rp->sliceDomainEnd_)
+						sEnd = rp->sliceDomainEnd_;
+					if (sStart >= sEnd) {
+						sStart = (sEnd > 1) ? (sEnd - 1) : 0;
+					}
+					if (rpReverse) {
+						rp->rendLoopStart_ =
+						    (sEnd > sStart + 1) ? (sEnd - 1) : sStart;
+						rp->rendLoopEnd_ = sStart;
+						rp->rendFirst_ = rp->rendLoopStart_;
+						loopPosition =
+						    (short *)(wavbuf +
+						              rp->rendLoopStart_ * 2 * channelCount);
+						lastSample =
+						    (short *)(wavbuf +
+						              rp->rendLoopEnd_ * 2 * channelCount);
+					} else {
+						rp->rendLoopStart_ = sStart;
+						rp->rendLoopEnd_ = sEnd;
+						rp->rendFirst_ = sStart;
+						loopPosition =
+						    (short *)(wavbuf +
+						              rp->rendLoopStart_ * 2 * channelCount);
+						lastSample =
+						    (short *)(wavbuf +
+						              (rp->rendLoopEnd_ - 1) * 2 * channelCount);
+					}
+					input = loopPosition;
+					rp->tsPos_[0] = (float)rp->rendFirst_;
+					rp->tsPos_[1] = (float)rp->rendFirst_;
+					reachedSliceEnd = false;
+				} else {
+					*rpFinished = true;
+					reachedSliceEnd = false;
+				}
+			}
 
 			if (!rpReverse) { //Looping forward 
-				if (input>=lastSample/*-((loopMode==SILM_OSCFINE)?1:0)*/) {
+				if (reachedSliceEnd && input>=lastSample/*-((loopMode==SILM_OSCFINE)?1:0)*/) {
 					switch(loopMode) {
                     case SILM_ONESHOT:
                         *rpFinished = true;
@@ -873,7 +1002,7 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 					} ;
 				}
 			} else { // Looping backward
-				if (input<lastSample) {
+				if (reachedSliceEnd && input<lastSample) {
 					switch(loopMode) {
                     case SILM_ONESHOT:
                         *rpFinished = true;

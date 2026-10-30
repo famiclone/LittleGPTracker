@@ -12,6 +12,23 @@ enum {
     MIXER_CHANNEL_COUNT = SONG_CHANNEL_COUNT + 1
 };
 
+enum MixerFxId {
+    MIXER_FX_HPF = 0,
+    MIXER_FX_LPF = 1,
+    MIXER_FX_DLY = 2,
+    MIXER_FX_REV = 3,
+    MIXER_FX_TPE = 4,
+    MIXER_FX_SCH = 5,
+    MIXER_FX_COUNT = 6,
+    MIXER_FX_NONE = 0xFF
+};
+
+struct MixerFxInfo {
+    unsigned char id;
+    const char *shortName;
+    const char *fullName;
+};
+
 class Mixer:public T_Singleton<Mixer>,Persistent {
 public:
 	Mixer() ;
@@ -52,6 +69,32 @@ public:
     inline void SetChannelTapeAmt(int i, unsigned char value) {
         channelTapeAmt_[i] = value;
     };
+    inline unsigned char GetChannelSidechainSrc(int i) {
+        return channelSidechainSrc_[i];
+    };
+    inline void SetChannelSidechainSrc(int i, unsigned char value) {
+        channelSidechainSrc_[i] = value;
+    };
+    inline unsigned char GetChannelSidechainAmt(int i) {
+        return channelSidechainAmt_[i];
+    };
+    inline void SetChannelSidechainAmt(int i, unsigned char value) {
+        channelSidechainAmt_[i] = value;
+    };
+
+    // Dynamic Mixer FX registry and active list
+    static int GetAvailableFxCount();
+    static const MixerFxInfo &GetFxInfo(int fxId);
+    int GetAddedFxCount() const { return addedFxCount_; }
+    unsigned char GetAddedFxAt(int index) const {
+        return (index >= 0 && index < addedFxCount_) ? addedFx_[index]
+                                                     : (unsigned char)MIXER_FX_NONE;
+    }
+    int IndexOfAddedFx(unsigned char fxId) const;
+    bool IsFxAdded(unsigned char fxId) const;
+    bool AddFx(unsigned char fxId);
+    bool RemoveFx(unsigned char fxId);
+    void ResetFxOnChannel(unsigned char fxId, int col);
 
 	virtual void SaveContent(TiXmlNode *node) ;
 	virtual void RestoreContent(TiXmlElement *element);
@@ -65,6 +108,10 @@ private:
     unsigned char channelReverbSize_[MIXER_CHANNEL_COUNT];
     unsigned char channelReverbAmt_[MIXER_CHANNEL_COUNT];
     unsigned char channelTapeAmt_[MIXER_CHANNEL_COUNT];
+    unsigned char channelSidechainSrc_[MIXER_CHANNEL_COUNT];
+    unsigned char channelSidechainAmt_[MIXER_CHANNEL_COUNT];
+    int addedFxCount_;
+    unsigned char addedFx_[MIXER_FX_COUNT];
 } ;	
 
 #endif

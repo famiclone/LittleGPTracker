@@ -108,8 +108,8 @@ class View : public Observable {
     virtual void OnPlayerUpdate(PlayerEventType, unsigned int currentTick) = 0;
     virtual void OnFocus() = 0;
     virtual void AnimationUpdate();
-    // Pixel overlay drawn after the char grid (e.g. vector waveforms).
-    virtual void DrawOverlay() {}
+    // Pixel overlay drawn after the char grid (e.g. vector waveforms & VU bars).
+    virtual void DrawOverlay();
 
     void SetDirty(bool dirty);
 
@@ -156,6 +156,7 @@ class View : public Observable {
 
     void drawMap();
     void drawNotes();
+    void drawTrackVuOverlay(bool includeMaster = false);
     void drawVUMeter(uint8_t leftBars, uint8_t rightBars, GUIPoint pos,
                      GUITextProperties props, int vuIndex,
                      bool forceRedraw = false);
@@ -171,6 +172,7 @@ class View : public Observable {
     bool hasFocus_;
     uint8_t prevLeftVU_[8]; // inertia tracking for VU (8 channels)
     uint8_t prevRightVU_[8];
+    float trackVuLevel_[9];
 
   private:
     unsigned short mask_;

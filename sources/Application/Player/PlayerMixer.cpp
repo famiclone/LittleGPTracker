@@ -158,6 +158,8 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
       channel_[i]->SetDelay(dlySteps, dlyAmt);
       channel_[i]->SetReverb(revSize, revAmt);
       channel_[i]->SetTape(tapeAmt);
+      channel_[i]->SetSidechain(mixer->GetChannelSidechainSrc(i),
+                                mixer->GetChannelSidechainAmt(i));
   }
   if (masterChannel_) {
       masterChannel_->SetVolume(
@@ -172,6 +174,9 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
           mixer->GetChannelReverbSize(MASTER_CHANNEL_INDEX),
           mixer->GetChannelReverbAmt(MASTER_CHANNEL_INDEX));
       masterChannel_->SetTape(mixer->GetChannelTapeAmt(MASTER_CHANNEL_INDEX));
+      masterChannel_->SetSidechain(
+          mixer->GetChannelSidechainSrc(MASTER_CHANNEL_INDEX),
+          mixer->GetChannelSidechainAmt(MASTER_CHANNEL_INDEX));
   }
   MixerService *ms=MixerService::GetInstance();
   ms->SetPregain(project_->GetPregain());
@@ -247,6 +252,13 @@ bool PlayerMixer::IsChannelMuted(int channel) {
          return channel_[channel]->IsMuted() ;
      }
      return false;
+}
+
+float PlayerMixer::GetChannelSidechainEnv(int channel) const {
+     if (channel >= 0 && channel < SONG_CHANNEL_COUNT && channel_[channel]) {
+         return channel_[channel]->GetSidechainEnv();
+     }
+     return 0.0f;
 }
 
 void PlayerMixer::StartStreaming(const Path &path) {

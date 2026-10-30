@@ -13,6 +13,7 @@ public:
 	virtual void OnPlayerUpdate(PlayerEventType ,unsigned int tick=0) ;
     virtual void AnimationUpdate();
     virtual void OnFocus() ;
+    void OnAddFxModalClosed(int returnCode);
 protected:
 	void processNormalButtonMask(unsigned int mask) ;
     void processSelectionButtonMask(unsigned int mask) ;
@@ -22,11 +23,13 @@ protected:
     void toggleMute();
     void toggleSolo();
     void unMuteAll();
+    void openAddFxModal();
+    void clampMixerRow();
 
 private:
 	const char *song_ ;
     int soloChannel_;
-    int mixerRow_; // 1=volume, 2=hpf, 3=lpf, 4=dly, 5=rev
+    int mixerRow_; // 1=VOL, 2..(1+addedFxCount)=added FX rows, (2+addedFxCount)="add fx"
 
     struct {                      // .Clipboard structure
         bool active_ ;            // .If currently making a selection

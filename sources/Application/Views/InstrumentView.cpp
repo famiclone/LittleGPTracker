@@ -304,6 +304,12 @@ void InstrumentView::toggleInstrumentAudition(bool forceRetrigger) {
             note = 60;
         }
     }
+    if (current_->GetType() == IT_SAMPLE) {
+        Variable *sl = current_->FindVariable(SIP_SLICES);
+        if (sl && sl->GetInt() > 1) {
+            note = 0;
+        }
+    }
     pm->Lock();
     pm->StopInstrument(ch);
     pm->StartInstrument(ch, current_, (unsigned char)note, true);
@@ -616,24 +622,30 @@ void InstrumentView::applySlicesUiIfNeeded() {
         return;
     }
     Variable *slices = current_->FindVariable(SIP_SLICES);
+    Variable *ste = current_->FindVariable(SIP_SLICETOEND);
     if (!slices) {
         return;
     }
-    bool want = slices->GetInt() > 1;
-    bool have = false;
+    bool wantEnd = slices->GetInt() > 1;
+    bool wantRnd = wantEnd && (ste && ste->GetInt() != 0);
+    bool haveEnd = false;
+    bool haveRnd = false;
     IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator());
     for (it->Begin(); !it->IsDone(); it->Next()) {
         UIField &raw = it->CurrentItem();
         if (raw.IsStatic() || isActionField(&raw)) {
             continue;
         }
-        if (((UIIntVarField &)raw).GetVariableID() == SIP_SLICETOEND) {
-            have = true;
-            break;
+        FourCC fid = ((UIIntVarField &)raw).GetVariableID();
+        if (fid == SIP_SLICETOEND) {
+            haveEnd = true;
+        } else if (fid == SIP_SLICERND) {
+            haveRnd = true;
         }
     }
-    if (want != have) {
+    if (wantEnd != haveEnd || wantRnd != haveRnd) {
         onInstrumentChange();
+        ((AppWindow &)w_).Clear(true);
         isDirty_ = true;
     }
 }
@@ -1118,54 +1130,72 @@ void InstrumentView::fillSampleParameters() {
     pos = GUIPoint(27, yGrid + 6);
     T_SimpleList<UIField>::Insert(
         new UIIntVarField(pos, *v, "%2.2X", 1, 0xFF, 1, 0x10));
+    bool showSliceRnd = false;
     if (v->GetInt() > 1) {
         Variable *ste = instrument->FindVariable(SIP_SLICETOEND);
         if (ste) {
             pos = GUIPoint(30, yGrid + 6);
             T_SimpleList<UIField>::Insert(
                 new UIIntVarField(pos, *ste, "END:%s", 0, 1, 1, 1));
+            if (ste->GetInt() != 0) {
+                showSliceRnd = true;
+            }
         }
     } else {
         addBarItem(29, yGrid + 6, 8, SIP_SLICES, 0x40, false);
     }
 
-    pos = GUIPoint(21, yGrid + 7);
+    int yRightNext = yGrid + 7;
+    if (showSliceRnd) {
+        pos = GUIPoint(21, yRightNext);
+        T_SimpleList<UIField>::Insert(new UIStaticField(pos, "SL.RND"));
+        Variable *srnd = instrument->FindVariable(SIP_SLICERND);
+        if (srnd) {
+            pos = GUIPoint(27, yRightNext);
+            T_SimpleList<UIField>::Insert(
+                new UIIntVarField(pos, *srnd, "%2.2X", 0, 0xFF, 1, 0x10));
+            addBarItem(29, yRightNext, 8, SIP_SLICERND, 0xFF, false);
+        }
+        yRightNext++;
+    }
+
+    pos = GUIPoint(21, yRightNext + 0);
     T_SimpleList<UIField>::Insert(new UIStaticField(pos, "REVRS"));
     v = instrument->FindVariable(SIP_REVERSE);
     if (v) {
-        pos = GUIPoint(27, yGrid + 7);
+        pos = GUIPoint(27, yRightNext + 0);
         T_SimpleList<UIField>::Insert(
             new UIIntVarField(pos, *v, "%s", 0, 1, 1, 1));
     }
 
-    pos = GUIPoint(21, yGrid + 8);
+    pos = GUIPoint(21, yRightNext + 1);
     T_SimpleList<UIField>::Insert(new UIStaticField(pos, "DEL"));
     v = instrument->FindVariable(SIP_DELSEND);
     if (v) {
-        pos = GUIPoint(27, yGrid + 8);
+        pos = GUIPoint(27, yRightNext + 1);
         T_SimpleList<UIField>::Insert(
             new UIIntVarField(pos, *v, "%2.2X", 0, 0xFF, 1, 0x10));
-        addBarItem(29, yGrid + 8, 8, SIP_DELSEND, 0xFF, false);
+        addBarItem(29, yRightNext + 1, 8, SIP_DELSEND, 0xFF, false);
     }
 
-    pos = GUIPoint(21, yGrid + 9);
+    pos = GUIPoint(21, yRightNext + 2);
     T_SimpleList<UIField>::Insert(new UIStaticField(pos, "REV"));
     v = instrument->FindVariable(SIP_REVSEND);
     if (v) {
-        pos = GUIPoint(27, yGrid + 9);
+        pos = GUIPoint(27, yRightNext + 2);
         T_SimpleList<UIField>::Insert(
             new UIIntVarField(pos, *v, "%2.2X", 0, 0xFF, 1, 0x10));
-        addBarItem(29, yGrid + 9, 8, SIP_REVSEND, 0xFF, false);
+        addBarItem(29, yRightNext + 2, 8, SIP_REVSEND, 0xFF, false);
     }
 
-    pos = GUIPoint(21, yGrid + 10);
+    pos = GUIPoint(21, yRightNext + 3);
     T_SimpleList<UIField>::Insert(new UIStaticField(pos, "TAPE"));
     v = instrument->FindVariable(SIP_TAPESEND);
     if (v) {
-        pos = GUIPoint(27, yGrid + 10);
+        pos = GUIPoint(27, yRightNext + 3);
         T_SimpleList<UIField>::Insert(
             new UIIntVarField(pos, *v, "%2.2X", 0, 0xFF, 1, 0x10));
-        addBarItem(29, yGrid + 10, 8, SIP_TAPESEND, 0xFF, false);
+        addBarItem(29, yRightNext + 3, 8, SIP_TAPESEND, 0xFF, false);
     }
 }
 
@@ -1357,6 +1387,9 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
                            fid == SYP_FINETUNE) {
                     vf->GetVariable().SetInt(0x7F);
                     isDirty_ = true;
+                } else if (fid == SIP_SLICERND) {
+                    vf->GetVariable().SetInt(0);
+                    isDirty_ = true;
                 }
             }
         }
@@ -1483,7 +1516,7 @@ void InstrumentView::drawParamBarsOverlay() {
         focusId = ((UIIntVarField *)focus)->GetVariableID();
     }
 
-    GUIRect dirtyRect(9 * cw, (paramBaseY_ + 5) * ch, 39 * cw, 26 * ch);
+    GUIRect dirtyRect(9 * cw, (paramBaseY_ + 5) * ch, 39 * cw, 27 * ch);
     aw.BeginBatchDraw();
 
     for (int i = 0; i < barItemCount_; i++) {

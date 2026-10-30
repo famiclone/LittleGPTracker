@@ -1,9 +1,12 @@
 #include "View.h"
 #include "System/Console/Trace.h"
 #include "Application/Player/Player.h"
+#include "Application/Mixer/MixerService.h"
+#include "Application/Model/Mixer.h"
 #include "Application/Utils/char.h"
 #include "Application/AppWindow.h"
 #include "Application/Model/Config.h"
+#include "UIFramework/BasicDatas/FontConfig.h"
 #include "ModalView.h"
 
 bool View::initPrivate_=false ;
@@ -43,6 +46,9 @@ View::View(GUIWindow &w,ViewData *viewData):
     for (int i = 0; i < 8; i++) {
         prevLeftVU_[i] = 0;
         prevRightVU_[i] = 0;
+    }
+    for (int i = 0; i < 9; i++) {
+        trackVuLevel_[i] = 0.0f;
     }
 } ;
 
@@ -154,42 +160,229 @@ void View::drawMap() {
 }
 
 void View::drawNotes() {
+    // Bottom area is rendered as pixel-rectangle per-track VU meters
+    // in drawTrackVuOverlay() / DrawOverlay().
+}
 
-    if (!miniLayout_) {
+static void drawTransparentGlyph(AppWindow &aw, char c, int px, int py,
+                                 int fillTopY) {
+    unsigned int fontID = (unsigned char)c;
+    if (fontID >= FONT_COUNT || c == ' ' || c == '\0') {
+        return;
+    }
+    const unsigned char *src = font + fontID * 8;
+    for (int y = 0; y < 8; y++) {
+        int scanY = py + y;
+        ColorDefinition col =
+            (scanY >= fillTopY) ? CD_BACKGROUND : CD_NORMAL;
+        int x = 0;
+        while (x < 8) {
+            if (src[x] == 0) {
+                int xStart = x;
+                while (x < 8 && src[x] == 0) {
+                    x++;
+                }
+                GUIRect span(px + xStart, scanY, px + x, scanY + 1);
+                aw.FillRect(span, col);
+            } else {
+                x++;
+            }
+        }
+        if (y < 7) {
+            src += FONT_WIDTH;
+        }
+    }
+}
 
-		GUIPoint anchor=GetAnchor() ;
-		int initialX = View::margin_+10 ;
-		int initialY = anchor._y+23 ;
-		GUIPoint pos(initialX,initialY) ;
-		GUITextProperties props ;
+static int collectChannelActiveFxCodes(Mixer *mixer, int ch,
+                                       const char *outCodes[3]) {
+    if (!mixer || ch < 0 || ch >= MIXER_CHANNEL_COUNT) {
+        return 0;
+    }
+    int count = 0;
+    int addedCount = mixer->GetAddedFxCount();
+    for (int k = 0; k < addedCount && count < 3; k++) {
+        unsigned char fxId = mixer->GetAddedFxAt(k);
+        switch (fxId) {
+        case MIXER_FX_HPF:
+            if (mixer->GetChannelHPF(ch) != 0) {
+                outCodes[count++] = "HP";
+            }
+            break;
+        case MIXER_FX_LPF:
+            if (mixer->GetChannelLPF(ch) != 0) {
+                outCodes[count++] = "LP";
+            }
+            break;
+        case MIXER_FX_DLY:
+            if (mixer->GetChannelDelaySteps(ch) != 0) {
+                outCodes[count++] = "DL";
+            }
+            break;
+        case MIXER_FX_REV:
+            if (mixer->GetChannelReverbSize(ch) != 0) {
+                outCodes[count++] = "RV";
+            }
+            break;
+        case MIXER_FX_TPE:
+            if (mixer->GetChannelTapeAmt(ch) != 0) {
+                outCodes[count++] = "TP";
+            }
+            break;
+        case MIXER_FX_SCH:
+            if (mixer->GetChannelSidechainSrc(ch) < SONG_CHANNEL_COUNT &&
+                mixer->GetChannelSidechainAmt(ch) > 0) {
+                outCodes[count++] = "SC";
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return count;
+}
 
-        Player *player=Player::GetInstance() ;
-		
-		//column banger refactor
-		props.invert_= true;
-        for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
-			if (i==viewData_->songX_) {
-				SetColor(CD_HILITE2) ;
-			} else {
-				SetColor(CD_HILITE1) ;
-			}
-			if (player->IsRunning() && viewData_->playMode_ != PM_AUDITION) {
-				DrawString(pos._x,pos._y,player->GetPlayedNote(i),props) ; //row for the note values
-				pos._y++ ;
-				DrawString(pos._x,pos._y,player->GetPlayedOctive(i),props) ; //row for the octive values
-				pos._y++ ;
-				DrawString(pos._x,pos._y,player->GetPlayedInstrument(i),props) ; //draw instrument number
-			} else {
-				DrawString(pos._x,pos._y,"  ",props) ; //row for the note values
-				pos._y++ ;
-				DrawString(pos._x,pos._y,"  ",props) ; //row for the octive values
-				pos._y++ ;
-				DrawString(pos._x,pos._y,"  ",props) ; //draw instrument number
-			}
-			pos._y = initialY ;
-			pos._x+= 3;
-		}
-     }
+void View::drawTrackVuOverlay(bool includeMaster) {
+    if (miniLayout_ || HasModal()) {
+        return;
+    }
+
+    AppWindow &aw = (AppWindow &)w_;
+    const int cw = AppWindow::CharWidth();
+    const int ch = AppWindow::CharHeight();
+    GUIPoint anchor = GetAnchor();
+    Mixer *mixer = Mixer::GetInstance();
+
+    int topRow = anchor._y + 23;
+    int botRow = anchor._y + 26;
+    if (includeMaster) {
+        int addedCount = mixer ? mixer->GetAddedFxCount() : 0;
+        int addFxRowY =
+            anchor._y + 3 + addedCount + ((addedCount > 0 && addedCount < 5) ? 1 : 0);
+        topRow = addFxRowY + 2;
+        if (topRow > anchor._y + 22) {
+            topRow = anchor._y + 22;
+        }
+        botRow = 30;
+    }
+
+    int by0 = topRow * ch;
+    int by1 = botRow * ch;
+    int barH = by1 - by0;
+    if (barH <= 0) {
+        return;
+    }
+
+    int numBars = includeMaster ? 9 : 8;
+    Player *player = Player::GetInstance();
+    bool isRunning = (player && player->IsRunning());
+    MixerService *ms = MixerService::GetInstance();
+
+    int stripX0 = anchor._x * cw;
+    int lastColX = anchor._x + (numBars - 1) * 3 +
+                   ((numBars - 1 == MASTER_CHANNEL_INDEX) ? 1 : 0);
+    int stripX1 = (lastColX + 2) * cw;
+    GUIRect dirtyStrip(stripX0, by0, stripX1, by1);
+
+    aw.BeginBatchDraw();
+
+    int warnThresholdPx = (barH * 3) / 4;
+    if (warnThresholdPx < 1) {
+        warnThresholdPx = 1;
+    }
+
+    for (int i = 0; i < numBars; i++) {
+        float peak = 0.0f;
+        if (isRunning && !player->IsChannelMuted(i) && ms) {
+            if (i < 8) {
+                int busIdx = mixer ? mixer->GetBus(i) : i;
+                MixBus *bus = ms->GetMixBus(busIdx);
+                if (bus) {
+                    uint32_t level = bus->GetPeakLevel();
+                    float pkL = (float)((level >> 16) & 0xFFFF) / 32767.0f;
+                    float pkR = (float)(level & 0xFFFF) / 32767.0f;
+                    peak = (pkL > pkR) ? pkL : pkR;
+                }
+            } else {
+                uint32_t masterLevel = ms->GetMasterPeakLevel();
+                float pkL = (float)((masterLevel >> 16) & 0xFFFF) / 32767.0f;
+                float pkR = (float)(masterLevel & 0xFFFF) / 32767.0f;
+                peak = (pkL > pkR) ? pkL : pkR;
+            }
+        }
+        if (peak > 1.0f) {
+            peak = 1.0f;
+        }
+
+        if (peak > trackVuLevel_[i]) {
+            trackVuLevel_[i] = peak;
+        } else {
+            trackVuLevel_[i] = trackVuLevel_[i] * 0.85f + peak * 0.15f;
+            if (trackVuLevel_[i] < 0.01f) {
+                trackVuLevel_[i] = 0.0f;
+            }
+        }
+
+        int colX = anchor._x + i * 3 + ((i == MASTER_CHANNEL_INDEX) ? 1 : 0);
+        int bx0 = colX * cw;
+        int bx1 = (colX + 2) * cw;
+
+        // Draw background container rectangle
+        GUIRect bgRect(bx0, by0, bx1, by1);
+        aw.FillRect(bgRect, CD_HILITE1);
+
+        int fillPx = (int)(trackVuLevel_[i] * (float)barH + 0.5f);
+        if (fillPx > barH) {
+            fillPx = barH;
+        }
+        if (fillPx > 0) {
+            int bodyPx =
+                (fillPx > warnThresholdPx) ? warnThresholdPx : fillPx;
+            if (bodyPx > 0) {
+                GUIRect bodyRect(bx0, by1 - bodyPx, bx1, by1);
+                aw.FillRect(bodyRect, CD_COL_TITLE);
+            }
+            if (fillPx > warnThresholdPx) {
+                GUIRect capRect(bx0, by1 - fillPx, bx1, by1 - warnThresholdPx);
+                aw.FillRect(capRect, CD_HILITE2);
+            }
+        }
+
+        // On non-mixer views (e.g. SongView), draw active FX codes on top of the 3-row VU bar
+        if (!includeMaster) {
+            const char *fxCodes[3];
+            int fxCount = collectChannelActiveFxCodes(mixer, i, fxCodes);
+            int fillTopY = by1 - fillPx;
+            for (int r = 0; r < fxCount && r < 3; r++) {
+                int gy = by0 + r * ch;
+                drawTransparentGlyph(aw, fxCodes[r][0], bx0, gy, fillTopY);
+                drawTransparentGlyph(aw, fxCodes[r][1], bx0 + cw, gy, fillTopY);
+            }
+        }
+    }
+
+    aw.EndBatchDraw(dirtyStrip);
+}
+
+void View::DrawOverlay() {
+    if (miniLayout_ || HasModal()) {
+        return;
+    }
+    switch (viewType_) {
+    case VT_SONG:
+    case VT_CHAIN:
+    case VT_PHRASE:
+    case VT_TABLE:
+    case VT_TABLE2:
+    case VT_GROOVE:
+        drawTrackVuOverlay(false);
+        break;
+    case VT_MIXER:
+        drawTrackVuOverlay(true);
+        break;
+    default:
+        break;
+    }
 }
 
 void View::DoModal(ModalView *view,ModalViewCallback cb) {
