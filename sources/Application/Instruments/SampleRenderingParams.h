@@ -97,5 +97,14 @@ struct renderParams {
 
 	float svfLp_[2];
 	float svfBp_[2];
+
+	bool sliceRandomActive_;
+	int sliceDomainStart_;
+	int sliceDomainEnd_;
+	int sliceCount_;
+	int sliceLen_;
+	int curSlice_;
+	int slicesRemaining_;
+	unsigned int sliceRng_;
 } ;
 #endif

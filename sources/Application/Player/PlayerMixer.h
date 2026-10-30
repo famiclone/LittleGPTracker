@@ -54,6 +54,7 @@ public:
 
 	void SetChannelMute(int channel,bool mute) ;
     bool IsChannelMuted(int channel);
+    float GetChannelSidechainEnv(int channel) const;
 
     char *GetPlayedNote(int channel);
     char *GetPlayedOctive(int channel) ;

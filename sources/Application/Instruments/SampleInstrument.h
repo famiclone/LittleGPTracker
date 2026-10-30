@@ -58,6 +58,7 @@ enum SampleInstrumentLoopMode {
 #define SIP_TAPESEND MAKE_FOURCC('T', 'P', 'S', 'D')
 #define SIP_TIMESTRETCH MAKE_FOURCC('T', 'S', 'T', 'R')
 #define SIP_AMP MAKE_FOURCC('S', 'A', 'M', 'P')
+#define SIP_SLICERND MAKE_FOURCC('S', 'R', 'N', 'D')
 
 #define FB_BUFFER_LENGTH 3500 // (in samples)
 
@@ -144,6 +145,7 @@ private:
 	   Variable *loopMode_ ;
 	   Variable *slices_ ;
 	   Variable *sliceToEnd_ ;
+	   Variable *sliceRnd_ ;
 	   Variable *reverse_ ;
 	   Variable *transpose_ ;
 	   Variable *delSend_ ;

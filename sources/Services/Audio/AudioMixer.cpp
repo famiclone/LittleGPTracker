@@ -159,6 +159,9 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
              sample = fl2fp(damp * fp2fl(hardClip(softClip(sample))));
              *c++ = sample;
          }
+     } else {
+         peakMixerLevel_ = 0;
+         preMasterVolumePeakLevel_ = 0;
      }
     if (enableRendering_&&writer_) {
 		if (!gotData) {

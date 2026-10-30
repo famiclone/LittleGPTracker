@@ -901,54 +901,7 @@ void SongView::processSelectionButtonMask(unsigned int mask) {
  ******************************************************/
 
 void SongView::DrawVuBars() {
-    Player *player = Player::GetInstance();
-
-    GUIPoint anchor = GetAnchor();
-    GUIPoint vuPos = anchor;
-    vuPos._x += 25;
-    vuPos._y += View::songRowCount_ - 1;
-    
-    GUITextProperties vuProps;
-    vuProps.invert_ = true;
-
-    float peakLevelsL[1];
-    float peakLevelsR[1];
-
-    // Read master peak level (post-volume) to match MixerView's Master meter
-    if (!player->IsRunning()) {
-        peakLevelsL[0] = peakLevelsR[0] = 0.0f;
-    } else {
-        MixerService *ms = MixerService::GetInstance();
-        uint32_t masterLevel = ms->GetMasterPeakLevel();
-        peakLevelsL[0] = (float)((masterLevel >> 16) & 0xFFFF) / 32767.0f;
-        peakLevelsR[0] = (float)(masterLevel & 0xFFFF) / 32767.0f;
-    }
-
-    // Update bar height for master using utility
-    int displayHeightsL[1];
-    int displayHeightsR[1];
-    UpdateVuBarHeights(vuBarHeightsL_, displayHeightsL, peakLevelsL, 1);
-    UpdateVuBarHeights(vuBarHeightsR_, displayHeightsR, peakLevelsR, 1);
-
-    // Draw vertical VU bars for L and R channels (two columns side by side)
-    for (int row = 0; row < VU_METER_HEIGHT; row++) {
-        SetColor(GetVuBarColor(row));
-
-        // Draw left channel at x
-        GUIPoint posL = vuPos;
-        posL._y -= row;
-        DrawVuBarRow(this, posL, row, displayHeightsL[0], vuProps,
-                     GetVuBarColor(row));
-
-        // Draw right channel at x+1 (one character to the right)
-        GUIPoint posR = vuPos;
-        posR._x += 1;
-        posR._y -= row;
-        DrawVuBarRow(this, posR, row, displayHeightsR[0], vuProps,
-                     GetVuBarColor(row));
-    }
-
-    SetColor(CD_NORMAL);
+    drawTrackVuOverlay(false);
 }
 
 /******************************************************
@@ -1086,12 +1039,9 @@ void SongView::DrawView() {
     drawMap();
     drawNotes();
 
-    if (player->IsRunning()) {
-        OnPlayerUpdate(PET_UPDATE);
-    };
+    OnPlayerUpdate(player->IsRunning() ? PET_UPDATE : PET_STOP);
 
     // Draw VU bars at the end so they appear on top of everything
-    // They will always show the empty dashes and smoothly decay when paused
     DrawVuBars();
 };
 
@@ -1225,9 +1175,9 @@ void SongView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
     DrawString(pos._x, pos._y, strbuffer, props);
 
     // BPM under the play timer
-    sprintf(strbuffer, "%3.3d", viewData_->project_->GetTempo());
+    sprintf(strbuffer, "T%3.3d", viewData_->project_->GetTempo());
     pos._y += 1;
-    DrawString(pos._x, pos._y, strbuffer, props);
+    DrawString(pos._x - 1, pos._y, strbuffer, props);
 
     drawNotes();
 };

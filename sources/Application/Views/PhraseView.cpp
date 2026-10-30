@@ -1333,6 +1333,7 @@ void PhraseView::DrawOverlay() {
     int instrId = findClosestInstrumentFor(row_);
     if (instrId < 0) {
         clearWaveformStrip(px, py, pw, ph);
+        drawTrackVuOverlay(false);
         return;
     }
 
@@ -1340,19 +1341,23 @@ void PhraseView::DrawOverlay() {
     I_Instrument *instr = bank->GetInstrument(instrId);
     if (!instr) {
         clearWaveformStrip(px, py, pw, ph);
+        drawTrackVuOverlay(false);
         return;
     }
 
     if (instr->GetType() == IT_SAMPLE) {
         drawSampleOverlay(px, py, pw, ph, instrId, instr);
+        drawTrackVuOverlay(false);
         return;
     }
     if (instr->GetType() == IT_SYNTH) {
         drawSynthOverlay(px, py, pw, ph, instr);
+        drawTrackVuOverlay(false);
         return;
     }
 
     clearWaveformStrip(px, py, pw, ph);
+    drawTrackVuOverlay(false);
 }
 
 void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
