@@ -386,8 +386,8 @@ jobs:
 
       - name: Build Xcode project
         run: |
-          xcodebuild ONLY_ACTIVE_ARCH=NO -project projects/lgpt64.xcodeproj -scheme LittleGPTracker -configuration Release build
-          cp -R bin/LittleGPTracker.app projects/
+          xcodebuild ONLY_ACTIVE_ARCH=NO -project projects/lgpt64.xcodeproj -scheme SwineTracker -configuration Release build
+          cp -R bin/SwineTracker.app projects/
 
       - name: Package build
         working-directory: projects/resources/packaging

@@ -1,6 +1,6 @@
 # Description
 
-Thank you for contributing to Little Piggy Tracker!
+Thank you for contributing to Swine Tracker!
 For fixes, please include a summary of the changes and any related issue.
 For features, please include a detailed description of the new feature and how it works.
 
@@ -30,6 +30,6 @@ Provide instructions on how to reproduce.
 - [ ] I have performed a self-review of my code
 - [ ] I have commented particularly in hard-to-understand areas
 - [ ] I have updated CHANGELOG
-- [ ] I have updated docs/wiki/What-is-LittlePiggyTracker.md reflecting my changes
+- [ ] I have updated docs/wiki/What-is-SwineTracker.md reflecting my changes
 - [ ] I have version bumped in `sources/Application/Model/Project.h`
 - [ ] My changes generate no new warnings (build without your change then apply your change to check this)

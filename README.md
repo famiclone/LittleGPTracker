@@ -1,8 +1,8 @@
-# Little Piggy Tracker
+# Swine Tracker
 
-![Piggy](https://avatars.githubusercontent.com/u/180156201?s=400&u=ebb53bdea61a025edce0c3782ac75b532dd65dd7&v=4)
+![Swine Tracker](docs/st_banner.png)
 
-**Little Piggy Tracker** (f.k.a _'LittleGPTracker'_) is a music tracker optimised to run on portable game consoles. It is currently running on Windows, MacOS (intel/arm) & Linux, PSP, Miyoo Mini, and a collection of other retro gaming handhelds.
+**Swine Tracker** (f.k.a. *Little Piggy Tracker* / *LittleGPTracker*) is a music tracker optimised to run on portable game consoles. It is currently running on Windows, MacOS (intel/arm) & Linux, PSP, Miyoo Mini, and a collection of other retro gaming handhelds.
 
 It implements the user interface of [littlesounddj](https://www.littlesounddj.com/lsd/index.php) and precedes [M8 tracker](https://www.dirtywave.com), two popular trackers greatly loved in the tracker community.
 
@@ -10,9 +10,9 @@ All versions are available for free under the [GPLv3 License](LICENSE). If you l
 
 ## About This Fork
 
-This build is derivative of the work of the original author `m-.-n`
-aka [Marc Nostromo](https://github.com/Mdashdotdashn/LittleGPTracker).
-The original work and releasing the source code has laid the foundation for everything in this repo.
+This repository (`famiclone/SwineTracker`) is developed independently. It remains a derivative of the work of the original author `m-.-n` aka [Marc Nostromo](https://github.com/Mdashdotdashn/LittleGPTracker), and later community forks; their releases of the source code laid the foundation for everything here.
+
+Active development happens on **`develop`**. **`main`** tracks stable merges. There is no ongoing sync with other public forks unless explicitly decided.
 
 All implemented features have been tested not to break old
 projects but make sure to backup your old cherished work
@@ -22,9 +22,9 @@ just to be safe &#9829;
 
 ### Current Builds
 
-Latest releases from this fork here:
+Latest releases from this fork:
 
-- [Releases](https://github.com/djdiskmachine/LittleGPTracker/releases)
+- [Releases](https://github.com/famiclone/SwineTracker/releases)
 
 
 ## Documentation
@@ -33,10 +33,12 @@ All the relevant documentation can be found in [Docs](docs) directory.
 
 Recommended reading to get you started:
 
-- [What is Little Piggy Tracker](docs/wiki/What-is-LittlePiggyTracker.md)
+- [**Famiclone fork features**](docs/wiki/FORK_FEATURES.md) — Settings/Appearance, mixer FX, synth/SHAPES, Brick, commands
+- [What is Swine Tracker](docs/wiki/What-is-SwineTracker.md)
 - [Quick-Start Guide](docs/wiki/quick_start_guide.md)
-- [Little Piggy Tracker Configuration](docs/LittlePiggyTrackerConf.md)
+- [Swine Tracker Configuration](docs/SwineTrackerConf.md)
 - [Tips and Tricks](docs/wiki/tips_and_tricks.md)
+- [CHANGELOG](CHANGELOG)
 
 ## Features per platform
 
@@ -56,7 +58,8 @@ Recommended reading to get you started:
 | GARLIC      | NO            | NO           | NO         | No longer maintained, use Portmaster|
 | GARLICPLUS  | MAYBE         | NO           | YES        | Port by [Simotek](http://simotek.net)|
 | RG35XXPLUS  | MAYBE         | NO           | YES        | Port by [Simotek](http://simotek.net)|
-| MACOS       | YES           | YES          | MAYBE      | Port by [clsource](https://genserver.social/clsource) |
+| MACOS       | YES           | YES          | MAYBE      | Port by [clsource](https://genserver.social/clsource); `make PLATFORM=MACOS` |
+| TG5040      | MAYBE         | NO           | MAYBE      | TrimUI Brick: sleep, mic Record, `make brick` |
 
 * **MIDI functionality __greatly__ depends on kernel support, please feature request your favourite OS maintainer =)**
 * **Install ffmpeg by following install instructions for your platform [here](https://www.ffmpeg.org/download.html)**

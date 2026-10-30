@@ -101,7 +101,7 @@ SDLGUIWindowImp::SDLGUIWindowImp(GUICreateWindowParams &p)
   	fullscreen=true ;
   }
   
-  SDL_WM_SetCaption("LittleGPTracker","lgpt");
+  SDL_WM_SetCaption("Swine Tracker","swine");
 	
   if (!strcmp(driverName, "fbcon"))
   {

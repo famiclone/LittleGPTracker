@@ -1,4 +1,4 @@
-LittleGPTracker can be configured in a various ways through a series of flags. These flags can either be defined temporarely at the command line or permanently in a config file called 'config.xml'.
+SwineTracker can be configured in a various ways through a series of flags. These flags can either be defined temporarely at the command line or permanently in a config file called 'config.xml'.
 
 Note that values do not necessarely affect all platforms. Also, if one of the values isn't working for you it's possible that you need to get the latest [ghetto build](https://wiki.littlegptracker.com/doku.php?id=lgpt:ghetto_builds "lgpt:ghetto_builds").
 
@@ -41,7 +41,7 @@ Then you can add as many config flags as you like:
 
 For [WIN/DEB/OSX]
 
-To start LittleGPTracker in fullscreen:
+To start SwineTracker in fullscreen:
 
 ```xml
 <CONFIG>
@@ -56,7 +56,7 @@ Be careful as large values take a lot of juice and interfere with sound playback
 
 ## Screen Colors
 
-LittleGPTracker uses 6 colours to do all the drawing. If you want, you can redefine them using the following parameters:
+SwineTracker uses 6 colours to do all the drawing. If you want, you can redefine them using the following parameters:
 
 -   `BACKGROUND`: color of the background
 -   `FOREGROUND`: color of the foreground
@@ -95,6 +95,16 @@ All colors are defined by a set of hexadecimal triplet for RGB. Here's an exampl
 ```
 
 You can generate this config values [in an awesome web app](http://poyo.co/lgpt/ "http://poyo.co/lgpt/")
+
+### Appearance schemes (this fork)
+
+Besides `config.xml`, you can edit and store full palettes from **Project → Settings → Appearance**:
+
+- Schemes live in `schemes/*.xml` (same colour keys as above inside a `<CONFIG>` root).
+- **Save Scheme** / **Load Scheme** from that screen.
+- The last loaded or saved scheme name is stored in `bin:last_scheme` and reapplied on startup (after reading `config.xml`).
+
+Bundled examples: `monokai`, `everforest`, `catppuccin-macchiato`, `msx`.
 
 ## Key and Button Mapping
 

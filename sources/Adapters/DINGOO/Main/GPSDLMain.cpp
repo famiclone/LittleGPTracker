@@ -12,7 +12,7 @@ int main(int argc,char *argv[])
 	GPSDLSystem::Boot(argc,argv) ;
 
 	SDLCreateWindowParams params ;
-	params.title="littlegptracker" ;
+	params.title="Swine Tracker" ;
 	params.cacheFonts_=true ;
   params.framebuffer_=true ;
 

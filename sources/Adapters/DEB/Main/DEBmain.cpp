@@ -8,7 +8,7 @@ int main(int argc,char *argv[])
 	DEBSystem::Boot(argc,argv) ;
 
 	SDLCreateWindowParams params ;
-	params.title="littlegptracker" ;
+	params.title="Swine Tracker" ;
 	params.cacheFonts_=true ;
 
 	Application::GetInstance()->Init(params) ;

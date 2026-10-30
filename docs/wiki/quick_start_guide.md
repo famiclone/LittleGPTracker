@@ -2,7 +2,7 @@
 
 ## preamble
 
-this quick start guide is intended to be a gentle introduction to LittleGPTracker (lgpt, piggy, the pig, our precious oinker, etc). this guide should be useful if you're running piggy on any platform.
+this quick start guide is intended to be a gentle introduction to Swine Tracker (lgpt, piggy, the pig, our precious oinker, etc). this guide should be useful if you're running swine on any platform.
 
 piggy is a [sample tracker](http://en.wikipedia.org/wiki/Tracker) with an interface and controls specifically designed for a hand held game console. along the way there have been many bows to [LSDj](http://www.littlesounddj.com) so if your comfortable with that gameboy tracker, piggy will fit like an old hat.
 
@@ -24,7 +24,7 @@ first grab & extract the zip file for your platform from the [official homepage]
 
 there's not much to do w/ the config file for now unless you are running piggy on a gp2x after playing with [LSDj](http://www.littlesounddj.com) … the A/Y/X/B buttons will feel awkward. you can flip the buttons to feel like lsdj in the config file, but you'll have to remember each reference to the A button in this guide is actually to Y/B (and each reference to B is actually to X/A)!
 
-the config file is an [xml](http://en.wikipedia.org/wiki/XML) document which can be edited like any text file. if it doesn't exist piggy has safe default values. however, if you want to use a config.xml file and didn't find one in the install.rar, grab the examples from the [reference manual](What-is-LittlePiggyTracker.md) and save it in the same directory as lgpt.gpe.
+the config file is an [xml](http://en.wikipedia.org/wiki/XML) document which can be edited like any text file. if it doesn't exist piggy has safe default values. however, if you want to use a config.xml file and didn't find one in the install.rar, grab the examples from the [reference manual](What-is-SwineTracker.md) and save it in the same directory as lgpt.gpe.
 
 ## loading samples
 
@@ -60,7 +60,7 @@ the red numbers to the left of each row indicate a position in the song. like a 
 
 ![](https://web.archive.org/web/20190513041654im_/http://wiki.littlegptracker.com/lib/exe/fetch.php?media=quick:start02_1.1f.png)
 
-time for action! but first a few conventions: key presses will be `monospaced` for easier reading. a `,` between button pushes means to push the button twice (`B,B` would be tap `B` twice). a `+` between buttons means to hold the first button and then hit the second button (`L+B,B,B` would be hold the `L shoulder` and tap `B` three times). also, if you're following along in windows you may want to check on the [control moves list](What-is-LittlePiggyTracker.md#controls--moves) for pc keyboard equivalents of the buttons.
+time for action! but first a few conventions: key presses will be `monospaced` for easier reading. a `,` between button pushes means to push the button twice (`B,B` would be tap `B` twice). a `+` between buttons means to hold the first button and then hit the second button (`L+B,B,B` would be hold the `L shoulder` and tap `B` three times). also, if you're following along in windows you may want to check on the [control moves list](What-is-SwineTracker.md#controls--moves) for pc keyboard equivalents of the buttons.
 
 for reals: time for action! hit `A,A` (double tap the A button that is) to create your first Chain. a hex number will pop up to identify creation. it is only possible to have FF (256) Chains in a piggy project.
 
@@ -128,9 +128,9 @@ notice the instrument names at the top of the screen as you change the instrumen
 
 there are four columns on the right are for triggering commands. each pair of columns is for specifying a command and the parameters for it's execution.
 
-commands are placed (press `A`) and removed (`B+A`) much the same as notes. some commands work best when used on the same row as a sample trigger, some show their true colors when triggered on a row of their own or on a row with another command. it's up to you to have fun and see what will come out, but technical descriptions of all the commands is available in the [reference manual](What-is-LittlePiggyTracker.md).
+commands are placed (press `A`) and removed (`B+A`) much the same as notes. some commands work best when used on the same row as a sample trigger, some show their true colors when triggered on a row of their own or on a row with another command. it's up to you to have fun and see what will come out, but technical descriptions of all the commands is available in the [reference manual](What-is-SwineTracker.md).
 
-changing the parameters for commands is different. `A+joystick:left/right` will move the parameter editing cursor back and forth over the four digits. `A+joystick:up/down` will change the value for the digits. the four parameter digits effect each command differently, again i must refer you to the [reference manual](What-is-LittlePiggyTracker.md) if you are interested in details.
+changing the parameters for commands is different. `A+joystick:left/right` will move the parameter editing cursor back and forth over the four digits. `A+joystick:up/down` will change the value for the digits. the four parameter digits effect each command differently, again i must refer you to the [reference manual](What-is-SwineTracker.md) if you are interested in details.
 
 ## selections
 
@@ -209,7 +209,7 @@ mute and solo effect an entire channel, rather than a particular Chain on a chan
 
 ## further reading
 
-if you made it this far and are still thirsting for more knowledge, you may want to page through the [reference manual](What-is-LittlePiggyTracker.md)
+if you made it this far and are still thirsting for more knowledge, you may want to page through the [reference manual](What-is-SwineTracker.md)
 <!-- or the [rest of this wiki](https://web.archive.org/web/20190513041654/http://wiki.littlegptracker.com/doku.php?id=start "start"). -->
 
 <!-- if you want to stay on the cutting edge, subscribe to the [lgpt mailing list](https://web.archive.org/web/20190513041654/http://launch.groups.yahoo.com/group/littlegptracker/ "http://launch.groups.yahoo.com/group/littlegptracker/"). -->
