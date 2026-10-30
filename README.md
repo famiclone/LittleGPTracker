@@ -18,6 +18,20 @@ All implemented features have been tested not to break old
 projects but make sure to backup your old cherished work
 just to be safe &#9829;
 
+## Screenshots
+
+| Song | Mixer |
+|:---:|:---:|
+| ![Song](docs/screenshots/main.png) | ![Mixer](docs/screenshots/mix.png) |
+
+| Phrase (synth) | Phrase (sample) |
+|:---:|:---:|
+| ![Phrase synth](docs/screenshots/phr01.png) | ![Phrase sample](docs/screenshots/phr02.png) |
+
+| Instrument · SYNTH | Instrument · SHAPES | Instrument · SAMPLER |
+|:---:|:---:|:---:|
+| ![SYNTH](docs/screenshots/ins01.png) | ![SHAPES](docs/screenshots/ins02.png) | ![SAMPLER](docs/screenshots/ins03.png) |
+
 ## Releases
 
 ### Current Builds
