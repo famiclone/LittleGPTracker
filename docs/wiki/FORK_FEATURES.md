@@ -174,7 +174,7 @@ Existing commands (ARPG, FLTR, LPOF, SLCE, …) remain as in upstream docs.
 ## See also
 
 - [What is Swine Tracker](What-is-SwineTracker.md) — base UI reference (updated where fork behaviour differs)
-- [config.xml](config_xml.md) — colours and global flags
+- [config.xml](../SwineTrackerConf.md) — colours and global flags
 - [tips and tricks](tips_and_tricks.md) — slices, oscillator, looper sync
 - Root [CHANGELOG](../../CHANGELOG) — versioned notes for this fork
 

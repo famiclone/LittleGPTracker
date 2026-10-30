@@ -29,6 +29,13 @@ Before submitting a PR, ensure:
 - [ ] **Submitting new hardware configuration?**:
   - Before submitting, please check device compatibility with Portmaster. Maintaining a device is continuous work and is rarely a one-shot. Does this hardware configuration contribute something that Portmaster cannot achieve?
 
+## Local build layout
+
+- Build from `projects/`. Do not commit `last_project`, `last_scheme`, `config.xml`, `lgpt_*` song folders, or build outputs — they are gitignored.
+- On Linux, `root:` follows the process cwd; run the binary from the directory that contains `schemes/`, `samplelib/`, and your songs (often `projects/` during development).
+- On macOS, `root:` is next to the binary / outside the `.app`; place `schemes/` and `samplelib/` there for a release-style layout.
+- See README **Developing / launch layout** for `bin:` vs `root:`.
+
 - [ ] **Testing**:
   - Describe how you tested your changes in the PR description
   - Include relevant test results

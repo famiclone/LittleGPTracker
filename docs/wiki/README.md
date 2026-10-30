@@ -1,10 +1,13 @@
+# Wiki index (with archive captures)
 
-# WIKI
+Documentation entry point: [../README.md](../README.md).
+
+Canonical configuration guide: [../SwineTrackerConf.md](../SwineTrackerConf.md).
 
 | wiki page | doc file | capture |
 | --- | --- | --- |
 | famiclone_fork_features | [FORK_FEATURES.md](FORK_FEATURES.md) | — (this fork) |
-| config | [SwineTrackerConf.md](../SwineTrackerConf.md)  | [web.archive.org](https://web.archive.org/web/20210415040625/http://wiki.littlegptracker.com/doku.php?id=lgpt:config) |
+| config | [SwineTrackerConf.md](../SwineTrackerConf.md) | [web.archive.org](https://web.archive.org/web/20210415040625/http://wiki.littlegptracker.com/doku.php?id=lgpt:config) |
 | dfs_midi_cable | [dfs_midi_cable.md](dfs_midi_cable.md) | [web.archive.org](https://web.archive.org/web/20160325031702/http://wiki.littlegptracker.com/doku.php?id=lgpt:dfs_midi_cable) |
 | ghetto_builds | - | [web.archive.org](https://web.archive.org/web/20210117142846/http://wiki.hexawe.net/doku.php?id=lgpt:ghetto_builds) |
 | mapping | [SwineTrackerConf.md](../SwineTrackerConf.md) | [web.archive.org](https://web.archive.org/web/20160309150015/http://wiki.littlegptracker.com/doku.php?id=lgpt:mapping) |

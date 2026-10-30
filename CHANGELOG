@@ -1,4 +1,5 @@
 famiclone develop (post-1.6.0-bacon20 merge)
+    Repo hygiene: ignore session/song/build clutter; docs assets/archive; config docs deduped
     Renamed product to Swine Tracker (display name, docs, packaging labels; save format still LITTLEGPTRACKER / lgpt_)
     Independent fork workflow: develop for integration, main for stable
     Project Name rename; Settings (MIDI, Render) + Appearance schemes under Project

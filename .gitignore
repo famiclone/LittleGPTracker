@@ -1,33 +1,63 @@
+# Build trees
 bin/**
 build/**
-projects/build**
-projects/resources/W32/SDL2.dll
-tracks/**
+projects/build*/
+
+# Editor / OS
+.vscode
+.DS_Store
+
+# Generated font header (build may emit at repo root)
+/font.h
+
+# Session state next to the binary / under projects/ when developing from there
+/last_project
+/last_scheme
+projects/last_project
+projects/last_scheme
+projects/config.xml
+*.log
+
+# User songs and instruments (runtime under root:)
+/lgpt_*/
+projects/lgpt_*/
 *.dat
 *.wav
-*exe*
-*elf*
-*dge*
-.vscode
-font.h
+*.ins
+
+# Local samplelib copies / symlink
 projects/resources/packaging/samplelib
 projects/resources/packaging/lgpt_BETA
 projects/samplelib
-samplelib
-projects/lgpt.apple
-projects/config.xml
-.DS_Store
+/samplelib
 
-# build artifacts as per projects/resources/packaging/lgpt_package.sh
-projects/lgpt.deb-exe
+# Platform binaries (TITLE := lgpt) — keep patterns specific so IDE
+# projects (lgpt.xcodeproj, lgpt.sln, …) stay tracked.
+/lgpt
+/lgpt-*
+/lgpt.apple
+/lgpt.x64
+/lgpt.x86
+projects/lgpt.apple
 projects/lgpt.x64
 projects/lgpt.x86
-projects/lgpt-miyoo.elf
-projects/lgpt-W32.exe
+projects/lgpt.deb-exe
 projects/lgpt.rpi-exe
 projects/lgpt.chip-exe
+projects/lgpt.steam-exe
+projects/lgpt-miyoo.elf
+projects/lgpt-W32.exe
 projects/lgpt-bittboy.elf
 projects/lgpt-garlic.elf
 projects/lgpt-garlicplus.elf
 projects/lgpt-rg35xxplus.elf
+projects/lgpt-tg5040.elf
 projects/SwineTracker.app
+*.deb-exe
+*.rpi-exe
+*.chip-exe
+*.steam-exe
+*.dge
+
+# Legacy Windows packaging DLL
+projects/resources/W32/SDL2.dll

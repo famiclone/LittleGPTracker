@@ -190,7 +190,7 @@
 		7329F0D20BF46109009A5BD5 /* OSXmain.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = OSXmain.cpp; path = OSXMain/OSXmain.cpp; sourceTree = "<group>"; };
 		7329F0D30BF46109009A5BD5 /* SDLMain.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = SDLMain.h; path = OSXMain/SDLMain.h; sourceTree = "<group>"; };
 		7329F0D40BF46109009A5BD5 /* SDLMain.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = SDLMain.m; path = OSXMain/SDLMain.m; sourceTree = "<group>"; };
-		734B75CA151D2F9900CC5A14 /* revision.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = revision.txt; path = ../../LittleGPTracker/docs/revision.txt; sourceTree = SOURCE_ROOT; };
+		734B75CA151D2F9900CC5A14 /* revision.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = revision.txt; path = ../../LittleGPTracker/docs/archive/revision.txt; sourceTree = SOURCE_ROOT; };
 		734C2827151E1E190072494B /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
 		734FFEF5166DF384003FD4C3 /* Result.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Result.cpp; sourceTree = "<group>"; };
 		734FFEF6166DF384003FD4C3 /* Result.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Result.h; sourceTree = "<group>"; };
