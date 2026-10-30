@@ -4,12 +4,13 @@ Thank you for considering contributing to this project!
 
 ## Branch & Merge Strategy
 
-- **master** is the integration branch. It may contain unstable/experimental features.
-- **Pull Requests** should target `master`
+- **`develop`** is the integration branch (day-to-day work may be unstable).
+- **`main`** tracks stable merges / releases.
+- **Pull Requests** should target `develop`
 - **Releases** follow a release candidate workflow:
-  - Release candidates: `1.2.0-bacon0`, `1.2.0-bacon2`, etc.
-  - Stable releases: `v1.2.0` (after testing period)
-- **Users should only use tagged releases**, build from master at your own peril, may contain half-done pork
+    - Release candidates: `1.2.0-bacon0`, `1.2.0-bacon2`, etc.
+    - Stable releases: `v1.2.0` (after testing period)
+- **Users should only use tagged releases**, build from `develop` at your own peril
 
 ## Pull Request Requirements
 

@@ -5,7 +5,7 @@
 This is an independent fork under `famiclone/LittleGPTracker`. Do not sync, rebase onto, or open PRs against the original upstream (`djdiskmachine/LittleGPTracker` or earlier ancestors) unless the human explicitly asks.
 
 - Default integration branch: **`develop`**
-- Stable / release branch: **`master`**
+- Stable / release branch: **`main`**
 - Feature work: branch from `develop` with `feat/**`, `fix/**`, `chore/**`, or `refactor/**`, and open PRs into `develop`
 
 ## Core rule

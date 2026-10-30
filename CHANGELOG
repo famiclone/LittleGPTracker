@@ -1,5 +1,5 @@
 famiclone develop (post-1.6.0-bacon20 merge)
-    Independent fork workflow: develop for integration, master for stable
+    Independent fork workflow: develop for integration, main for stable
     Project Name rename; Settings (MIDI, Render) + Appearance schemes under Project
     Bundled schemes: monokai, everforest, catppuccin-macchiato, msx; last scheme restored on boot
     Mixer: per-channel DLY / REV / Tape + Master bus column; MIXER restore before load

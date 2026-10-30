@@ -1,6 +1,6 @@
 # Features
 
-Features added in `[famiclone/LittleGPTracker](https://github.com/famiclone/LittleGPTracker)` on top of the community Little Piggy Tracker line. Development targets `develop`; `master` holds stable merges.
+Features added in [`famiclone/LittleGPTracker`](https://github.com/famiclone/LittleGPTracker) on top of the community Little Piggy Tracker line. Development targets **`develop`**; **`main`** holds stable merges.
 
 Samples must be **8- or 16-bit PCM WAV** (stereo OK). 24-bit files will not load.
 
