@@ -1,3 +1,15 @@
+famiclone develop (post-1.6.0-bacon20 merge)
+    Independent fork workflow: develop for integration, master for stable
+    Project Name rename; Settings (MIDI, Render) + Appearance schemes under Project
+    Bundled schemes: monokai, everforest, catppuccin-macchiato, msx; last scheme restored on boot
+    Mixer: per-channel DLY / REV / Tape + Master bus column; MIXER restore before load
+    Sample: GRAIN, reverse, slice-to-end, LP/HP/BP filter modes, DEL/REV/TAPE sends, TSTR
+    Synth: SYNTH + SHAPES engines, .ins load/save, Play audition, named instruments
+    Phrase overlays; Song BPM under timer; gearbox S/L for Song/Live
+    Commands: RVRS, TSTR
+    TrimUI Brick (TG5040): build target, KEY_POWER deep sleep/wake, mic Record
+    macOS PLATFORM=MACOS build and device routing fixes
+
 1.6.0-bacon20
     Fixed MIDI muting
     Added MIDI chord command (MCHD)

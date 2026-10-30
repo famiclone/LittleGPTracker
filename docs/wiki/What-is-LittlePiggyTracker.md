@@ -290,24 +290,42 @@ To move from one screen to the other, press the RTrigger combined with the direc
 
 ![](https://web.archive.org/web/20190321005749im_/http://wiki.littlegptracker.com/lib/exe/fetch.php?media=screen:project_1.1f.png)
 
-- **Tempo:**: Can be set between 60bpm [0x3c] and 400bpm [0x190]. Resolution aligned to LSDJ. (nudge with b + left / right)
+Project holds **song/project** options. App-wide options live under **Settings** (see below). Nested Settings / Appearance still highlight **P** on the gearbox map.
+
+- **Name:** Edit or randomize the project folder name (same keyboard / Random flow as creating a project). Renames the folder on disk.
+- **Tempo:** Can be set between 60bpm [0x3c] and 400bpm [0x190]. Resolution aligned to LSDJ. (nudge with b + left / right)
 - **Master:** Main volume goes from 10% to 200%. Piggy is loud now!
 - **Transpose:** Live transposition of every triggered instruments.
-- **Soft clip:** Master channel with 5 preset levels of saturation. Change Unity to Boost for extreme loudness!
+- **Soft clip / Drive / Type:** Master channel saturation presets. Change Unity to Boost for extreme loudness!
+- **Scale:** Project scale for note entry helpers.
 - **Compact Sequencer:** Free all unused chain/phrases.
 - **Compact Instruments:** All unused instruments get their sample set to (null), old parameter settings stick. A dialog offers to remove unused samples.
 - **Load Song:** Brings you back to the Selector Screen.
-- **Save Song:** Save the work you do, and save frequently! The cursor will disappear while the data is being written.
-- **midi:** Lets you chose external MIDI device.
+- **Save Song / Save Song As:** Save the work you do, and save frequently! The cursor will disappear while the data is being written.
+- **Settings:** Opens the Settings screen (**R+Right** also works). MIDI device and Render moved here.
+- **Exit:** Quit the app (with confirm).
+
+### Settings (under Project)
+
+- **MIDI:** External MIDI out device.
+- **Render:** Off / Stereo / Stems — real-time WAV capture while playing. After enabling, use Start to begin/finish render.
+- **Appearance:** Colour editor and scheme load/save (**R+Right**). See [FORK_FEATURES.md](FORK_FEATURES.md).
+- Back with the action, or **R+Left** / **R+Up**.
+
+### Appearance (under Settings)
+
+- Edit each colour of the UI palette with live RGB feedback.
+- **Save Scheme** / **Load Scheme** use the `schemes/` directory next to the app root.
+- Last used scheme is restored on startup (`bin:last_scheme`).
 
 ## Song Screen
 
 ![](https://web.archive.org/web/20190321005749im_/http://wiki.littlegptracker.com/lib/exe/fetch.php?media=screen:song_1.1fb.png)
 
 - Songs are made up of chains. Each hex number on the song screen grid is a chain. You can navigate to any of those chains by putting your cursor on one and hitting RT+R.
-- The top of the song screen displays if you are in SONG or LIVE mode (toggle with B+L or B+R) and the name of the project you are editing (choose a new one with LT+RT+SELECT, but save before you go there because there is no turning back).
+- Song/Live mode still toggles with B+L or B+R. The old title strip (`Song/Live: name tempo`) is removed; the gearbox Song cell shows **S** or **L**. Project rename lives on the Project screen **Name** field.
 - On the bottom of the screen is the play-time visualizer. Each box correlates with the above columns in the song grid. When a sample is triggered in one of the columns, the note value of that trigger is displayed in the play-time visualizer.
-- On the right of the song screen we have some more play-time statistics. First there is the clip indicator which displays “—-” when your volume levels are ok and “clip” when you've cleared the headroom and are chopping off the top of your samples. Next is the CPU load indicator as a percentage value. After that is the number “100” that will flash when your battery is getting low (gp2x firmware 2.X and lower only!). The bottom row of the play-time statistics is the amount of time which has passed since you pressed start.
+- On the right of the song screen we have some more play-time statistics. First there is the clip indicator which displays “—-” when your volume levels are ok and “clip” when you've cleared the headroom and are chopping off the top of your samples. Next is the CPU load indicator as a percentage value. After that is the number “100” that will flash when your battery is getting low (gp2x firmware 2.X and lower only!). Below that: play timer, then **BPM**.
 - You can make a new chain by hitting A,A on a blank space in the song screen grid.
 - You can clone a chain by highlighting it with the cursor and pressing LT+(B,A).
 - You can copy a chain or selection of chains by highlighting and pressing B.
@@ -348,7 +366,10 @@ To move from one screen to the other, press the RTrigger combined with the direc
 
 ![](https://web.archive.org/web/20190321005749im_/http://wiki.littlegptracker.com/lib/exe/fetch.php?media=screen:instrument_1.3n.png)
 
-- **sample:** selects the .wav file to associate with the instrument. you can select the same sample in more than one instrument. if you tap A,A here it will take you to the Sample Import Screen (which lets you load new .WAV into your project).
+Instrument types: **Sample**, **MIDI**, **Synth** (SYNTH / SHAPES engines). See [FORK_FEATURES.md](FORK_FEATURES.md) for synth macros, `.ins` load/save, Play audition, GRAIN, sends, and TrimUI Brick mic Record.
+
+- **name / load / save / play:** Optional instrument name; load/save `instruments/*.ins`; Play auditions the instrument.
+- **sample:** selects the .wav file to associate with the instrument. you can select the same sample in more than one instrument. if you tap A,A here it will take you to the Sample Import Screen (which lets you load new .WAV into your project). On TrimUI Brick, Import also offers **Record** from the mic.
 - **FX selector:** Select between 4 impulse responses to print to the currently selected sample
 - **Wet:** How much of the effect to print 0 = nothing, 10 = probably too much
 - **Pad** For short samples, add up to 5000 ms silence to the end of the sample to let the reverb tail ring out.
@@ -373,9 +394,9 @@ IR credits:
 - **downsample:** decrease the bit rate, get those low frequency aliasing whines. each increase in this value will downsample the original sample by a factor of 2
 - **cutoff:** filter cutoff frequency
 - **reso:** filter resonance frequency
-- **type:** this is where it gets a little trickier. The filter now supports continuous change from low pass to high pass. set type to 00 for low pass. FF for hi-pass and 7f for Band pass (or is it notch? n0s must check). all intermediate values morph in between them.
-- **mode:** filter distortion. Modes are none, bassy & scream. Scream adds loads of distortion when increasing resonance. Bassy makes the filter behave a little better when resonance is set very high compared to the default mode.
-- **attenuate:** volume attenuator post (scream) filter
+- **type:** continuous morph from low pass (00) toward high pass (FF); mid values are band-ish morphs.
+- **mode:** filter routing — **OFF / LOWPASS / HIGHPASS / BANDPASS / LP+HP** (legacy original/bassy/scream labels still load).
+- **attenuate:** volume attenuator post filter
 - **fb tune:** length of the feedback delay line
 - **fb mix:** how much of the feedback is pushed back in the circuit
 
@@ -384,19 +405,26 @@ The feedbacktune parameter works a little differently in regular (one shot/loop)
 In regular modes, under 0x80, it delays the feedback pickup of a number of samples equivalent to the parameter. Over 0x80, the feedback line length is multiplied by 10, giving it more a sort of 'predelay'-ish character that works very well with short decayed sounds
 In oscillator modes, under 0x80 the feedback of specified length is added to the oscillator. Over 0x80 it is removed from the oscillator, making it a lot wilder.
 
-- **interpolation:** Interpolation mode ('linear'/'none'): selects which interpolation mode is used when in between samples. linear interpols linearly while none takes the nearest neighbor. Use none when playing samples at low range to add some typical overtones.
-- **loop mode:** selects the looping mode.
-  - none will play sample from zero to end.
-  - loop will start at zero and loop from loop start to loop end.
-  - pingpong will start at "start" and bounce the loop between loop start and loop end.
-  - oscillator is a special mode where the loop selection (from loop start to loop end) is taken as oscillator data and automatically tuned. Experiment with different settings, do not forget 'root note' is your friend to tune the oscillator back in a useful range
-  - looper sync will automatically tune a loop so that it plays exactly 16 bars. Use the root note to play twice faster/slower
-- **slices:** divides the sample into equal slices, mapped chromatically from C-2 upward. Set to 1 to disable. Example: slices == 4 gives four slices on C-2, C#-2, D-2, D#-2. When slices > 1, the active loop mode applies within each slice — use "loop" for looped slices, "none" for one-shot.
-- **start:** start point of the sample regardless of if loop is enabled; in hex
-- **loop Start:** start point of the sample when loop is enabled; in hex
-- **loop End:** end point of the sample; in hex. You can play samples backwards by setting the end value lower than the start!
+- **interpolation:** LINEAR / NONE — linear interpolates between samples; NONE nearest-neighbor (harsher lows).
+- **loop mode:**
+  - **NONE** — play from start toward end (oneshot).
+  - **LOOP** — loop between loop start and end.
+  - **PINGPONG** — bounce between loop start and end.
+  - **OSC** — treat the loop window as an oscillator (root note tunes it).
+  - **SYNC** — tune a loop to land on bar boundaries (root note doubles/halves).
+  - **GRAIN** — granular playback; pairs with instrument timestretch and phrase **TSTR**.
+- **slices:** divides the sample into equal slices, mapped chromatically from C-2 upward. Set to 1 to disable. When slices > 1, loop mode applies inside each slice.
+- **slice to end:** when ON with slices, play from the slice start through the sample end as oneshot.
+- **reverse:** instrument-level reverse (also see phrase **RVRS**).
+- **del / rev / tape:** per-instrument sends into the mixer delay / reverb / tape FX.
+- **timestretch:** base stretch amount for GRAIN / TSTR (`7F` ≈ unity).
+- **start / loop start / end:** sample markers in hex. End below start still plays backwards.
 - **automation:** If On, the table play arrows will advance one row every time the instrument is triggered, and execute only the commands on the new rows. If this is Off, table behavior is normal (play arrows cruise around real fast).
 - **table:** Select a table the instrument will always run. Clone a table here: LT+(B,A). Make a new table here: A,A.
+
+### Mixer Screen
+
+Eight channel columns plus a **Master** column. Per column: volume, HPF, LPF, **DLY** (tempo-synced delay), **REV**, **Tape**. Values persist in the project MIXER chunk. Instrument DEL/REV/TAPE sends add on top when non-zero.
 
 ## Sample Import Screen
 
@@ -612,14 +640,29 @@ RTRG 0101: does not do anything because after looping one tick, you move forward
 
 - to achieve sounds that grow in volume, make an instrument with volume 0 and then apply the VOLM command
 
+## RVRS aabb
+
+**reverse playback control.**
+
+- `00` toggle, `01` force reverse, `02` force forward, with optional offset in `aa`.
+
+## TSTR aabb
+
+**time stretch** (especially with **GRAIN** loop mode).
+
+- Stretch toward `bb` (`7F` ≈ 1×) at speed `aa`.
+
 # Rendering
 
-Some people exploit the analog gap between their device's headphone output and whatever they are recording with. Alternately, you can start piggy in rendering mode so it will output 16bit, 44100Hz .WAV files.
-The following values can set for RENDER in the project view
+Some people exploit the analog gap between their device's headphone output and whatever they are recording with. Alternately, enable rendering so piggy outputs 16-bit, 44100Hz .WAV files.
+
+**Render** is under **Project → Settings** (not on the main Project list):
 
 - Off: audio is played; no render.
 - Stereo: Real Time file rendering: Renders the mixdown to file WHILE playing audio. This allow to render live mode tweaks directly.
 - Stems: Real Time file split: same except all channels are rendered separately.
+
+After selecting Stereo/Stems, use **Start** to begin/finish the capture.
 
 Remember, any of the config.xml parameters can be specified to lgpt on the command line in this fashion:
 

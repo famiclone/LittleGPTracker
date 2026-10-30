@@ -33,10 +33,12 @@ All the relevant documentation can be found in [Docs](docs) directory.
 
 Recommended reading to get you started:
 
+- [**Famiclone fork features**](docs/wiki/FORK_FEATURES.md) — Settings/Appearance, mixer FX, synth/SHAPES, Brick, commands
 - [What is Little Piggy Tracker](docs/wiki/What-is-LittlePiggyTracker.md)
 - [Quick-Start Guide](docs/wiki/quick_start_guide.md)
 - [Little Piggy Tracker Configuration](docs/LittlePiggyTrackerConf.md)
 - [Tips and Tricks](docs/wiki/tips_and_tricks.md)
+- [CHANGELOG](CHANGELOG)
 
 ## Features per platform
 
@@ -56,7 +58,8 @@ Recommended reading to get you started:
 | GARLIC      | NO            | NO           | NO         | No longer maintained, use Portmaster|
 | GARLICPLUS  | MAYBE         | NO           | YES        | Port by [Simotek](http://simotek.net)|
 | RG35XXPLUS  | MAYBE         | NO           | YES        | Port by [Simotek](http://simotek.net)|
-| MACOS       | YES           | YES          | MAYBE      | Port by [clsource](https://genserver.social/clsource) |
+| MACOS       | YES           | YES          | MAYBE      | Port by [clsource](https://genserver.social/clsource); `make PLATFORM=MACOS` |
+| TG5040      | MAYBE         | NO           | MAYBE      | TrimUI Brick: sleep, mic Record, `make brick` |
 
 * **MIDI functionality __greatly__ depends on kernel support, please feature request your favourite OS maintainer =)**
 * **Install ffmpeg by following install instructions for your platform [here](https://www.ffmpeg.org/download.html)**

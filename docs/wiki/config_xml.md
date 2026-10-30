@@ -96,6 +96,16 @@ All colors are defined by a set of hexadecimal triplet for RGB. Here's an exampl
 
 You can generate this config values [in an awesome web app](http://poyo.co/lgpt/ "http://poyo.co/lgpt/")
 
+### Appearance schemes (this fork)
+
+Besides `config.xml`, you can edit and store full palettes from **Project → Settings → Appearance**:
+
+- Schemes live in `schemes/*.xml` (same colour keys as above inside a `<CONFIG>` root).
+- **Save Scheme** / **Load Scheme** from that screen.
+- The last loaded or saved scheme name is stored in `bin:last_scheme` and reapplied on startup (after reading `config.xml`).
+
+Bundled examples: `monokai`, `everforest`, `catppuccin-macchiato`, `msx`.
+
 ## Key and Button Mapping
 
 The buttons (GP2X/PSP) or keys (WIN/DEB/OSX) arrangment that is predefined can be totally reconfigured through the following parameters:
