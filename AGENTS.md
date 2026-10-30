@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## This repository
+
+This is an independent fork under `famiclone/LittleGPTracker`. Do not sync, rebase onto, or open PRs against the original upstream (`djdiskmachine/LittleGPTracker` or earlier ancestors) unless the human explicitly asks.
+
+- Default integration branch: **`develop`**
+- Stable / release branch: **`master`**
+- Feature work: branch from `develop` with `feat/**`, `fix/**`, `chore/**`, or `refactor/**`, and open PRs into `develop`
+
 ## Core rule
 
 You are assisting a human. That human is the author of any PR and is accountable for it. Do not act as an autonomous contributor.

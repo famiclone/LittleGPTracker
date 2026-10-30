@@ -10,9 +10,9 @@ All versions are available for free under the [GPLv3 License](LICENSE). If you l
 
 ## About This Fork
 
-This build is derivative of the work of the original author `m-.-n`
-aka [Marc Nostromo](https://github.com/Mdashdotdashn/LittleGPTracker).
-The original work and releasing the source code has laid the foundation for everything in this repo.
+This repository (`famiclone/LittleGPTracker`) is developed independently. It remains a derivative of the work of the original author `m-.-n` aka [Marc Nostromo](https://github.com/Mdashdotdashn/LittleGPTracker), and later community forks; their releases of the source code laid the foundation for everything here.
+
+Active development happens on **`develop`**. **`master`** tracks stable merges. There is no ongoing sync with other public forks unless explicitly decided.
 
 All implemented features have been tested not to break old
 projects but make sure to backup your old cherished work
@@ -22,9 +22,9 @@ just to be safe &#9829;
 
 ### Current Builds
 
-Latest releases from this fork here:
+Latest releases from this fork:
 
-- [Releases](https://github.com/djdiskmachine/LittleGPTracker/releases)
+- [Releases](https://github.com/famiclone/LittleGPTracker/releases)
 
 
 ## Documentation
