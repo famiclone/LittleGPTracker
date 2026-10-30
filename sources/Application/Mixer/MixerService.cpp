@@ -32,7 +32,7 @@ bool MixerService::Init() {
 	}
 
 	for (int i=0;i<MAX_BUS_COUNT;i++) {
-		master_.Insert(bus_[i]);
+		busMix_.Insert(bus_[i]);
 	}
 
 	bool result = false;
@@ -80,6 +80,7 @@ void MixerService::Close() {
 		out_->Close() ;
 		out_->Empty() ;
 		master_.Empty() ;
+        busMix_.Empty() ;
 
 		switch(mode_) {
         case MSRM_STEMS:

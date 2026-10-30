@@ -30,6 +30,7 @@ static inline float gbPadeTanh(float x) {
 PlayerChannel::PlayerChannel(int index) {
     index_ = index;
     instr_ = 0;
+    sourceModule_ = 0;
     muted_ = false;
     mixBus_ = 0;
     busIndex_ = -1;
@@ -555,19 +556,26 @@ bool PlayerChannel::applyTape(fixed *buffer, int samplecount) {
 
 bool PlayerChannel::Render(fixed *buffer, int samplecount) {
     if (muted_) {
-        if (instr_) {
+        if (sourceModule_) {
+            sourceModule_->Render(buffer, samplecount);
+        } else if (instr_) {
             bool tableSlice = SyncMaster::GetInstance()->TableSlice();
             instr_->Render(index_, buffer, samplecount, tableSlice | 2);
         }
         return false;
     }
     bool gotInstr = false;
-    if (instr_) {
+    if (sourceModule_) {
+        gotInstr = sourceModule_->Render(buffer, samplecount);
+        if (muted_) {
+            return false;
+        }
+    } else if (instr_) {
         bool tableSlice = SyncMaster::GetInstance()->TableSlice();
         gotInstr = instr_->Render(index_, buffer, samplecount,
                                   tableSlice | (muted_ << 1));
         if (muted_) {
-            gotInstr = false;
+            return false;
         }
     }
 
@@ -610,11 +618,16 @@ bool PlayerChannel::Render(fixed *buffer, int samplecount) {
                 lpfPrevOutput_[1] = out_r;
             }
         }
-    } else if (delaySteps_ != 0 || reverbSize_ != 0 || tapeAmt_ != 0) {
+    } else if (!muted_ &&
+               (delaySteps_ != 0 || reverbSize_ != 0 || tapeAmt_ != 0)) {
         for (int i = 0; i < samplecount * 2; i++) {
             buffer[i] = i2fp(0);
         }
     } else {
+        return false;
+    }
+
+    if (muted_) {
         return false;
     }
 
@@ -698,6 +711,23 @@ void PlayerChannel::SetMixBus(int i) {
     if (mixBus_) {
         mixBus_->Insert(*this);
     }
+}
+
+void PlayerChannel::SetMixBusPtr(MixBus *bus) {
+    if (mixBus_ == bus)
+        return;
+    if (mixBus_) {
+        mixBus_->Remove(*this);
+    }
+    busIndex_ = -2;
+    mixBus_ = bus;
+    if (mixBus_) {
+        mixBus_->Insert(*this);
+    }
+}
+
+void PlayerChannel::SetSourceModule(AudioModule *source) {
+    sourceModule_ = source;
 }
 
 void PlayerChannel::Reset() {

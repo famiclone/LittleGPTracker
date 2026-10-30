@@ -87,5 +87,15 @@ struct renderParams {
 	float grainPhase_[4];
 	float grainDir_[4];
 	unsigned int grainRng_;
+
+	float tsPhase_;
+	float tsPos_[2];
+	float tsBase_;
+	float tsCurrent_;
+	float tsTarget_;
+	float tsSpeed_;
+
+	float svfLp_[2];
+	float svfBp_[2];
 } ;
 #endif

@@ -1,29 +1,33 @@
 #define SEMITONE_FREQ_INTERVAL 1.0594630943592952645618252949461F
 
-char *loopTypes[SILM_LAST] = {"none", "loop", "ping pong", "oscillator",
+char *loopTypes[SILM_LAST] = {"NONE", "LOOP", "PINGPONG", "OSC",
                               //	"oscillator fine",
-                              "looper sync", "grain"};
+                              "SYNC", "GRAIN"};
 
 char *interpolationTypes[] = {
-	"linear",
-	"none"
+	"LINEAR",
+	"NONE"
 } ;
 
-char *sliceToEndTypes[] = {"off", "on"};
+char *sliceToEndTypes[] = {"OFF", "ON"};
 
-char *reverseTypes[] = {"off", "on"};
+char *reverseTypes[] = {"OFF", "ON"};
 
 char *filterMode[] = {
-	"original",
-  "bassy",
-	"scream"
+	"OFF",
+	"LOWPASS",
+	"HIGHPASS",
+	"BANDPASS",
+	"LP+HP"
 } ;
 
 enum FilterMode
 {
-  FM_ORIGINAL=0,
-  FM_BASSY, // Same as normal but with a new frequency mapping
-  FM_SCREAM,
+  FM_OFF=0,
+  FM_LOWPASS,
+  FM_HIGHPASS,
+  FM_BANDPASS,
+  FM_LPHP,
   FM_LAST
 };
 

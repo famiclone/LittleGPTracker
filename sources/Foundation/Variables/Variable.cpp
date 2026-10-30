@@ -199,7 +199,11 @@ void Variable::SetString(const char *input, bool notify) {
             maxValue_.int_ ? MIN(atoi(input), maxValue_.int_) : atoi(input);
         break;
     case BOOL:
-        value_.bool_ = (!strcmp("false", input) ? false : true);
+        value_.bool_ =
+            (!strcasecmp("false", input) || !strcasecmp("off", input) ||
+                     !strcmp("0", input)
+                 ? false
+                 : true);
         break;
     case STRING:
         stringValue_ = input;
@@ -222,6 +226,22 @@ void Variable::SetString(const char *input, bool notify) {
                 }
             }
         }
+        // Backward compatibility for legacy lowercase/long sample labels
+        if (value_.index_ == 0) {
+            if (!strcasecmp(input, "ping pong"))
+                value_.index_ = 2;
+            else if (!strcasecmp(input, "oscillator"))
+                value_.index_ = 3;
+            else if (!strcasecmp(input, "looper sync"))
+                value_.index_ = 4;
+            else if (!strcasecmp(input, "original") ||
+                     !strcasecmp(input, "orig") ||
+                     !strcasecmp(input, "bassy") ||
+                     !strcasecmp(input, "scream"))
+                value_.index_ = 0;
+            else if (!strcasecmp(input, "lphp"))
+                value_.index_ = 4;
+        }
         break;
     }
     if (notify) {
@@ -239,7 +259,7 @@ const char *Variable::GetString() {
         sprintf(string_, "%d", value_.int_);
         break;
     case BOOL:
-        strcpy(string_, value_.bool_ ? "true" : "false");
+        strcpy(string_, value_.bool_ ? "ON" : "OFF");
         break;
     case CHAR_LIST:
         if ((value_.index_ < 0) || (value_.index_ >= listSize_)) {

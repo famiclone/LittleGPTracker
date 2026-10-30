@@ -35,21 +35,21 @@ static const char *macroShapeLabels[SMS_LAST] = {
     "PLUCK",    "KICK",     "SNARE",   "CYMBAL",   "CHORD",    "SHIMMER",
     "ENSEMBLE", "GRAINPAD", "ORBIX"};
 
-static char *synthFilterModes[SYF_LAST] = {(char *)"off", (char *)"lowpass",
-                                           (char *)"highpass",
-                                           (char *)"bandpass", (char *)"lphp"};
+static char *synthFilterModes[SYF_LAST] = {(char *)"OFF", (char *)"LOWPASS",
+                                           (char *)"HIGHPASS",
+                                           (char *)"BANDPASS", (char *)"LP+HP"};
 
 static const char *synthFilterLabels[SYF_LAST] = {"OFF", "LOWPASS", "HIGHPASS",
                                                   "BANDPASS", "LP+HP"};
 
-static char *synthLimiterModes[SYL_LAST] = {(char *)"clip", (char *)"sin",
-                                            (char *)"fold", (char *)"wrap",
-                                            (char *)"post"};
+static char *synthLimiterModes[SYL_LAST] = {(char *)"CLIP", (char *)"SIN",
+                                            (char *)"FOLD", (char *)"WRAP",
+                                            (char *)"POST"};
 
 static const char *synthLimiterLabels[SYL_LAST] = {"CLIP", "SIN", "FOLD",
                                                    "WRAP", "POST"};
 
-static char *synthOnOff[2] = {(char *)"off", (char *)"on"};
+static char *synthOnOff[2] = {(char *)"OFF", (char *)"ON"};
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

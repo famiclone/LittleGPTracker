@@ -1,4 +1,3 @@
-
 #ifndef _MIXER_H_
 #define _MIXER_H_
 
@@ -8,14 +7,22 @@
 #include "Song.h"
 #include "Application/Utils/fixed.h"
 
+enum {
+    MASTER_CHANNEL_INDEX = SONG_CHANNEL_COUNT,
+    MIXER_CHANNEL_COUNT = SONG_CHANNEL_COUNT + 1
+};
+
 class Mixer:public T_Singleton<Mixer>,Persistent {
 public:
 	Mixer() ;
 	~Mixer() ;
 	void Clear() ;
 
-	inline int GetBus(int i) { return channelBus_[i]  ; } ;
-    inline void SetBus(int i, int value) { channelBus_[i] = value; };
+	inline int GetBus(int i) { return (i >= 0 && i < SONG_CHANNEL_COUNT) ? channelBus_[i] : 0; } ;
+    inline void SetBus(int i, int value) {
+        if (i >= 0 && i < SONG_CHANNEL_COUNT)
+            channelBus_[i] = value;
+    };
 
     inline int GetChannelVolume(int i) { return channelVolume_[i]; };
     inline void SetChannelVolume(int i, int value) { channelVolume_[i] = (unsigned char)value; };
@@ -50,14 +57,14 @@ public:
 	virtual void RestoreContent(TiXmlElement *element);
 private:
 	char channelBus_[SONG_CHANNEL_COUNT] ;
-    unsigned char channelVolume_[SONG_CHANNEL_COUNT];
-    unsigned char channelHPF_[SONG_CHANNEL_COUNT];
-    unsigned short channelLPF_[SONG_CHANNEL_COUNT];
-    unsigned char channelDelaySteps_[SONG_CHANNEL_COUNT];
-    unsigned char channelDelayAmt_[SONG_CHANNEL_COUNT];
-    unsigned char channelReverbSize_[SONG_CHANNEL_COUNT];
-    unsigned char channelReverbAmt_[SONG_CHANNEL_COUNT];
-    unsigned char channelTapeAmt_[SONG_CHANNEL_COUNT];
+    unsigned char channelVolume_[MIXER_CHANNEL_COUNT];
+    unsigned char channelHPF_[MIXER_CHANNEL_COUNT];
+    unsigned short channelLPF_[MIXER_CHANNEL_COUNT];
+    unsigned char channelDelaySteps_[MIXER_CHANNEL_COUNT];
+    unsigned char channelDelayAmt_[MIXER_CHANNEL_COUNT];
+    unsigned char channelReverbSize_[MIXER_CHANNEL_COUNT];
+    unsigned char channelReverbAmt_[MIXER_CHANNEL_COUNT];
+    unsigned char channelTapeAmt_[MIXER_CHANNEL_COUNT];
 } ;	
 
 #endif

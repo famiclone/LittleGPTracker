@@ -13,6 +13,7 @@
 #define IVP_START_MARKER MAKE_FOURCC('I', 'S', 'T', 'M')
 #define IVP_END_MARKER MAKE_FOURCC('I', 'E', 'N', 'M')
 #define IV_ACTION_NAME MAKE_FOURCC('I', 'N', 'A', 'M')
+#define IV_ACTION_PLAY MAKE_FOURCC('I', 'P', 'L', 'Y')
 #define IV_ACTION_LOAD MAKE_FOURCC('I', 'L', 'O', 'D')
 #define IV_ACTION_SAVE MAKE_FOURCC('I', 'S', 'A', 'V')
 
@@ -45,6 +46,10 @@ class InstrumentView : public FieldView, public I_Observer {
     void applySlicesUiIfNeeded();
     void syncSampleRangeFromMarkers();
     void refreshNameFieldText();
+    void refreshPlayFieldText();
+    void toggleInstrumentAudition(bool forceRetrigger = false);
+    void stopInstrumentAudition();
+    bool isActionField(const UIField *field) const;
     void drawModeLabels();
     void drawParamBarsOverlay();
     void ensureWaveformCache(short *pcm, int nFrames, int nCh, int sampleIdx);
@@ -80,11 +85,15 @@ class InstrumentView : public FieldView, public I_Observer {
     Variable *endMarkerVar_;
     int paramBaseY_;
     UIActionField *nameField_;
+    UIActionField *playField_;
     UIActionField *loadField_;
     UIActionField *saveField_;
     UIIntVarField *startMarkerField_;
     UIIntVarField *endMarkerField_;
     char nameLabelBuf_[32];
+    char playLabelBuf_[8];
+    bool isAuditioning_;
+    int auditionChannel_;
     bool inProcessButton_;
     bool pendingInstrumentChange_;
 

@@ -73,6 +73,7 @@ private:
 
 	AudioFileStreamer fileStreamer_ ;
 	PlayerChannel *channel_[SONG_CHANNEL_COUNT] ;
+    PlayerChannel *masterChannel_;
 
 	// store trigger notes, 0xFF = none
 	

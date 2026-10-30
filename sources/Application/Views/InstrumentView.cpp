@@ -5,6 +5,7 @@
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Instruments/SynthInstrument.h"
 #include "Application/Model/Config.h"
+#include "Application/Player/PlayerMixer.h"
 #include "BaseClasses/ModalView.h"
 #include "BaseClasses/UIBigHexVarField.h"
 #include "BaseClasses/UIIntVarOffField.h"
@@ -183,8 +184,9 @@ void InstrumentView::ListInstrumentFiles(std::vector<std::string> &out) {
 }
 
 InstrumentView::InstrumentView(GUIWindow &w, ViewData *data)
-    : FieldView(w, data), paramBaseY_(7), nameField_(0), loadField_(0),
-      saveField_(0), startMarkerField_(0), endMarkerField_(0),
+    : FieldView(w, data), paramBaseY_(7), nameField_(0), playField_(0),
+      loadField_(0), saveField_(0), startMarkerField_(0), endMarkerField_(0),
+      isAuditioning_(false), auditionChannel_(-1),
       inProcessButton_(false), pendingInstrumentChange_(false),
       barItemCount_(0), waveCacheSample_(-1), waveCacheFrames_(-1),
       overlayValid_(false), overlayDrawnSample_(-1), overlayDrawnStart_(-1),
@@ -196,6 +198,7 @@ InstrumentView::InstrumentView(GUIWindow &w, ViewData *data)
     lastFocusID_ = 0;
     current_ = 0;
     strcpy(nameLabelBuf_, "------------");
+    strcpy(playLabelBuf_, "PLAY");
     typeVar_ = new Variable("type", IVP_TYPE, instrumentTypeNames, 3, 0);
     startMarkerVar_ = new Variable("startMarker", IVP_START_MARKER, 0);
     endMarkerVar_ = new Variable("endMarker", IVP_END_MARKER, 0);
@@ -203,6 +206,7 @@ InstrumentView::InstrumentView(GUIWindow &w, ViewData *data)
 }
 
 InstrumentView::~InstrumentView() {
+    stopInstrumentAudition();
     delete typeVar_;
     delete startMarkerVar_;
     delete endMarkerVar_;
@@ -231,6 +235,84 @@ void InstrumentView::addBarItem(int charX, int charY, int charW, FourCC varId,
     b.varId_ = varId;
     b.maxVal_ = (maxVal > 0) ? maxVal : 255;
     b.centered_ = centered;
+}
+
+bool InstrumentView::isActionField(const UIField *field) const {
+    return (field == nameField_ || field == playField_ ||
+            field == loadField_ || field == saveField_);
+}
+
+void InstrumentView::refreshPlayFieldText() {
+    if (isAuditioning_ && auditionChannel_ >= 0 &&
+        PlayerMixer::GetInstance()->GetInstrument(auditionChannel_) ==
+            current_) {
+        strcpy(playLabelBuf_, "STOP");
+    } else {
+        isAuditioning_ = false;
+        auditionChannel_ = -1;
+        strcpy(playLabelBuf_, "PLAY");
+    }
+    if (playField_) {
+        playField_->SetName(playLabelBuf_);
+    }
+}
+
+void InstrumentView::stopInstrumentAudition() {
+    if (!isAuditioning_ && auditionChannel_ < 0) {
+        return;
+    }
+    int ch = (auditionChannel_ >= 0 && auditionChannel_ < SONG_CHANNEL_COUNT)
+                 ? auditionChannel_
+                 : 0;
+    PlayerMixer *pm = PlayerMixer::GetInstance();
+    pm->Lock();
+    if (pm->GetInstrument(ch) == current_) {
+        pm->StopInstrument(ch);
+    }
+    pm->Unlock();
+    isAuditioning_ = false;
+    auditionChannel_ = -1;
+    refreshPlayFieldText();
+    isDirty_ = true;
+}
+
+void InstrumentView::toggleInstrumentAudition(bool forceRetrigger) {
+    if (!current_) {
+        return;
+    }
+    PlayerMixer *pm = PlayerMixer::GetInstance();
+    int ch = viewData_->songX_;
+    if (ch < 0 || ch >= SONG_CHANNEL_COUNT) {
+        ch = 0;
+    }
+    bool activeOnCh = (isAuditioning_ && auditionChannel_ >= 0 &&
+                       pm->GetInstrument(auditionChannel_) == current_);
+    if (activeOnCh && !forceRetrigger) {
+        stopInstrumentAudition();
+        SetNotification("Audition: STOP");
+        return;
+    }
+    if (isAuditioning_ && auditionChannel_ >= 0 && auditionChannel_ != ch) {
+        stopInstrumentAudition();
+    }
+    int note = 60;
+    Variable *rv = current_->FindVariable(
+        (current_->GetType() == IT_SYNTH) ? SYP_ROOTNOTE : SIP_ROOTNOTE);
+    if (rv) {
+        note = rv->GetInt();
+        if (note < 0 || note > 127) {
+            note = 60;
+        }
+    }
+    pm->Lock();
+    pm->StopInstrument(ch);
+    pm->StartInstrument(ch, current_, (unsigned char)note, true);
+    pm->Unlock();
+    isAuditioning_ = true;
+    auditionChannel_ = ch;
+    refreshPlayFieldText();
+    SetNotification("Audition: PLAY");
+    isDirty_ = true;
 }
 
 void InstrumentView::refreshNameFieldText() {
@@ -419,6 +501,7 @@ void InstrumentView::onInstrumentChange() {
 
     ClearFocus();
     nameField_ = 0;
+    playField_ = 0;
     loadField_ = 0;
     saveField_ = 0;
     startMarkerField_ = 0;
@@ -433,6 +516,7 @@ void InstrumentView::onInstrumentChange() {
     current_ = bank->GetInstrument(i);
 
     if (old && old != current_) {
+        stopInstrumentAudition();
         old->RemoveObserver(*this);
     }
     T_SimpleList<UIField>::Empty();
@@ -464,10 +548,7 @@ void InstrumentView::onInstrumentChange() {
     IteratorPtr<UIField> it2(T_SimpleList<UIField>::GetIterator());
     for (it2->Begin(); !it2->IsDone(); it2->Next()) {
         UIField &raw = it2->CurrentItem();
-        if (raw.IsStatic()) {
-            continue;
-        }
-        if (&raw == nameField_ || &raw == loadField_ || &raw == saveField_) {
+        if (raw.IsStatic() || isActionField(&raw)) {
             continue;
         }
         UIIntVarField &field = (UIIntVarField &)raw;
@@ -499,6 +580,7 @@ void InstrumentView::applyTypeChangeIfNeeded() {
         if (current == IT_SYNTH && current_) {
             SynthInstrument *sy = (SynthInstrument *)current_;
             if (sy->GetEngineMode() != wantSynthMode) {
+                stopInstrumentAudition();
                 sy->SetEngineMode(wantSynthMode);
                 onInstrumentChange();
                 ((AppWindow &)w_).Clear(true);
@@ -508,6 +590,7 @@ void InstrumentView::applyTypeChangeIfNeeded() {
         return;
     }
 
+    stopInstrumentAudition();
     std::string savedName = current_ ? current_->GetUserName() : "";
     if (current_) {
         current_->RemoveObserver(*this);
@@ -541,8 +624,7 @@ void InstrumentView::applySlicesUiIfNeeded() {
     IteratorPtr<UIField> it(T_SimpleList<UIField>::GetIterator());
     for (it->Begin(); !it->IsDone(); it->Next()) {
         UIField &raw = it->CurrentItem();
-        if (raw.IsStatic() || &raw == nameField_ || &raw == loadField_ ||
-            &raw == saveField_) {
+        if (raw.IsStatic() || isActionField(&raw)) {
             continue;
         }
         if (((UIIntVarField &)raw).GetVariableID() == SIP_SLICETOEND) {
@@ -622,13 +704,19 @@ void InstrumentView::syncSampleRangeFromMarkers() {
 }
 
 void InstrumentView::fillHeaderParameters() {
-    // Row 7: TYPE   SAMPLER|SYNTH|SHAPES    LOAD SAVE
+    // Row 7: TYPE   SAMPLER|SYNTH|SHAPES   PLAY LOAD SAVE
     GUIPoint pos(1, paramBaseY_);
     T_SimpleList<UIField>::Insert(new UIStaticField(pos, "TYPE"));
 
     pos._x = 11;
     UIIntVarField *tf = new UIIntVarField(pos, *typeVar_, "%s", 0, 2, 1, 1);
     T_SimpleList<UIField>::Insert(tf);
+
+    refreshPlayFieldText();
+    pos._x = 21;
+    playField_ = new UIActionField(playLabelBuf_, IV_ACTION_PLAY, pos);
+    playField_->AddObserver(*this);
+    T_SimpleList<UIField>::Insert(playField_);
 
     pos._x = 27;
     loadField_ = new UIActionField("LOAD", IV_ACTION_LOAD, pos);
@@ -745,8 +833,9 @@ void InstrumentView::fillSynthParameters() {
         v = instrument->FindVariable(leftRows[r].id);
         if (v) {
             pos = GUIPoint(11, ry);
+            const char *fmt = leftRows[r].hasBar ? "%2.2X" : "%s";
             T_SimpleList<UIField>::Insert(
-                new UIIntVarField(pos, *v, "%2.2X", 0, leftRows[r].maxVal, 1,
+                new UIIntVarField(pos, *v, fmt, 0, leftRows[r].maxVal, 1,
                                   leftRows[r].coarse));
             if (leftRows[r].hasBar) {
                 addBarItem(13, ry, 6, leftRows[r].id, leftRows[r].maxVal,
@@ -775,8 +864,9 @@ void InstrumentView::fillSynthParameters() {
         v = instrument->FindVariable(rightRows[r].id);
         if (v) {
             pos = GUIPoint(27, ry);
+            const char *fmt = rightRows[r].hasBar ? "%2.2X" : "%s";
             T_SimpleList<UIField>::Insert(
-                new UIIntVarField(pos, *v, "%2.2X", 0, rightRows[r].maxVal, 1,
+                new UIIntVarField(pos, *v, fmt, 0, rightRows[r].maxVal, 1,
                                   rightRows[r].coarse));
             if (rightRows[r].hasBar) {
                 addBarItem(29, ry, 8, rightRows[r].id, rightRows[r].maxVal,
@@ -947,16 +1037,17 @@ void InstrumentView::fillSampleParameters() {
         {"CRUSH", SIP_CRUSH, 1, 0x10, 4, true, false},
         {"DRIVE", SIP_CRUSHVOL, 0, 0xFF, 0x10, true, false},
         {"DOWNSMP", SIP_DOWNSMPL, 0, 8, 2, true, false},
-        {"FILTER", SIP_FILTMODE, 0, 2, 1, false, false},
+        {"FILTER", SIP_FILTMODE, 0, 4, 1, false, false},
         {"CUTOFF", SIP_FILTCUTOFF, 0, 0xFF, 0x10, true, false},
         {"RES", SIP_FILTRESO, 0, 0xFF, 0x10, true, false},
-        {"FLT MIX", SIP_FILTMIX, 0, 0xFF, 0x10, true, false},
+        {"AMP", SIP_AMP, 0, 0xFF, 0x10, true, false},
         {"ATTEN", SIP_ATTENUATE, 1, 0xFF, 0x10, true, false},
         {"FB TUNE", SIP_FBTUNE, 0, 0xFF, 0x10, true, false},
         {"FB MIX", SIP_FBMIX, 0, 0xFF, 0x10, true, false},
+        {"STRETCH", SIP_TIMESTRETCH, 0, 0xFE, 0x10, true, true},
     };
 
-    for (int r = 0; r < 10; r++) {
+    for (int r = 0; r < 11; r++) {
         int ry = yGrid + r;
         pos = GUIPoint(1, ry);
         T_SimpleList<UIField>::Insert(
@@ -964,8 +1055,9 @@ void InstrumentView::fillSampleParameters() {
         v = instrument->FindVariable(leftSampleRows[r].id);
         if (v) {
             pos = GUIPoint(11, ry);
+            const char *fmt = leftSampleRows[r].hasBar ? "%2.2X" : "%s";
             T_SimpleList<UIField>::Insert(new UIIntVarField(
-                pos, *v, "%2.2X", leftSampleRows[r].minVal,
+                pos, *v, fmt, leftSampleRows[r].minVal,
                 leftSampleRows[r].maxVal, 1, leftSampleRows[r].coarse));
             if (leftSampleRows[r].hasBar) {
                 addBarItem(13, ry, 6, leftSampleRows[r].id,
@@ -1011,14 +1103,14 @@ void InstrumentView::fillSampleParameters() {
     v = instrument->FindVariable(SIP_INTERPOLATION);
     pos = GUIPoint(27, yGrid + 4);
     T_SimpleList<UIField>::Insert(
-        new UIIntVarField(pos, *v, "%2.2X", 0, 1, 1, 1));
+        new UIIntVarField(pos, *v, "%s", 0, 1, 1, 1));
 
     pos = GUIPoint(21, yGrid + 5);
     T_SimpleList<UIField>::Insert(new UIStaticField(pos, "LOOP"));
     v = instrument->FindVariable(SIP_LOOPMODE);
     pos = GUIPoint(27, yGrid + 5);
     T_SimpleList<UIField>::Insert(
-        new UIIntVarField(pos, *v, "%2.2X", 0, SILM_LAST - 1, 1, 1));
+        new UIIntVarField(pos, *v, "%s", 0, SILM_LAST - 1, 1, 1));
 
     pos = GUIPoint(21, yGrid + 6);
     T_SimpleList<UIField>::Insert(new UIStaticField(pos, "SLICES"));
@@ -1043,7 +1135,7 @@ void InstrumentView::fillSampleParameters() {
     if (v) {
         pos = GUIPoint(27, yGrid + 7);
         T_SimpleList<UIField>::Insert(
-            new UIIntVarField(pos, *v, "%2.2X", 0, 1, 1, 1));
+            new UIIntVarField(pos, *v, "%s", 0, 1, 1, 1));
     }
 
     pos = GUIPoint(21, yGrid + 8);
@@ -1132,10 +1224,24 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
 
     isDirty_ = false;
 
+    // Extra button shortcut for previewing instrument sound from any row:
+    // SELECT toggles audition (A + SELECT retriggers from the start;
+    // L + START also toggles audition).
+    if (mask & EPBM_SELECT) {
+        toggleInstrumentAudition((mask & EPBM_A) != 0);
+        overlayValid_ = false;
+        isDirty_ = true;
+        return;
+    }
+    if ((mask & EPBM_L) && (mask & EPBM_START)) {
+        toggleInstrumentAudition(false);
+        overlayValid_ = false;
+        isDirty_ = true;
+        return;
+    }
+
     UIField *preFocus = GetFocus();
-    bool onActionField =
-        (preFocus == nameField_ || preFocus == loadField_ ||
-         preFocus == saveField_);
+    bool onActionField = isActionField(preFocus);
 
     if (viewMode_ == VM_NEW) {
         if (mask == EPBM_A && preFocus && !preFocus->IsStatic() &&
@@ -1231,8 +1337,7 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
                 current_->SetUserName("");
                 refreshNameFieldText();
                 isDirty_ = true;
-            } else if (focus && !focus->IsStatic() && focus != loadField_ &&
-                       focus != saveField_) {
+            } else if (focus && !focus->IsStatic() && !isActionField(focus)) {
                 UIIntVarField *vf = (UIIntVarField *)focus;
                 FourCC fid = vf->GetVariableID();
                 if (getInstrumentType() == IT_SAMPLE && fid == SIP_SAMPLE) {
@@ -1247,6 +1352,11 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
                            fid == MIP_TABLE) {
                     vf->GetVariable().SetInt(-1);
                     isDirty_ = true;
+                } else if (fid == SIP_TIMESTRETCH || fid == SIP_PAN ||
+                           fid == SIP_FINETUNE || fid == SYP_PAN ||
+                           fid == SYP_FINETUNE) {
+                    vf->GetVariable().SetInt(0x7F);
+                    isDirty_ = true;
                 }
             }
         }
@@ -1256,8 +1366,7 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
     } else {
         if (mask == EPBM_A) {
             UIField *focus = GetFocus();
-            if (focus && !focus->IsStatic() && focus != nameField_ &&
-                focus != loadField_ && focus != saveField_) {
+            if (focus && !focus->IsStatic() && !isActionField(focus)) {
                 FourCC varID = ((UIIntVarField *)focus)->GetVariableID();
                 if ((varID == SIP_TABLE) || (varID == MIP_TABLE) ||
                     (varID == SYP_TABLE) || (varID == SIP_SAMPLE) ||
@@ -1267,12 +1376,14 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
             }
         } else if (mask & EPBM_R) {
             if (mask & EPBM_LEFT) {
+                stopInstrumentAudition();
                 ViewType vt = VT_PHRASE;
                 ViewEvent ve(VET_SWITCH_VIEW, &vt);
                 SetChanged();
                 NotifyObservers(&ve);
             }
             if (mask & EPBM_DOWN) {
+                stopInstrumentAudition();
                 ViewType vt = VT_TABLE2;
                 int i = viewData_->currentInstrument_;
                 InstrumentBank *bank =
@@ -1287,11 +1398,13 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
                 NotifyObservers(&ve);
             }
             if (mask & EPBM_START) {
+                stopInstrumentAudition();
                 player->OnStartButton(PM_PHRASE, viewData_->songX_, true,
                                       viewData_->chainRow_);
             }
         } else {
             if (mask & EPBM_START) {
+                stopInstrumentAudition();
                 player->OnStartButton(PM_PHRASE, viewData_->songX_, false,
                                       viewData_->chainRow_);
             }
@@ -1299,8 +1412,7 @@ void InstrumentView::ProcessButtonMask(unsigned short mask, bool pressed) {
     }
 
     UIField *field = GetFocus();
-    if (field && !field->IsStatic() && field != nameField_ &&
-        field != loadField_ && field != saveField_) {
+    if (field && !field->IsStatic() && !isActionField(field)) {
         lastFocusID_ = ((UIIntVarField *)field)->GetVariableID();
     }
     overlayValid_ = false;
@@ -1319,58 +1431,19 @@ void InstrumentView::drawModeLabels() {
         SynthInstrument *sy = (SynthInstrument *)current_;
         bool isShapes = (sy->GetEngineMode() == SYM_SHAPES);
         int yShape = paramBaseY_ + 4;
-        int yGrid = paramBaseY_ + 6;
         if (isShapes) {
             Variable *v = current_->FindVariable(SYP_MACROSHAPE);
             if (v) {
-                DrawString(13, yShape,
+                DrawString(14, yShape,
                            SynthInstrument::GetMacroShapeLabel(v->GetInt()),
                            props);
             }
         } else {
             Variable *v = current_->FindVariable(SYP_WAVEFORM);
             if (v) {
-                DrawString(13, yShape,
+                DrawString(14, yShape,
                            SynthInstrument::GetShapeLabel(v->GetInt()), props);
             }
-        }
-        Variable *v = current_->FindVariable(SYP_FILTMODE);
-        if (v) {
-            DrawString(13, yGrid + 4,
-                       SynthInstrument::GetFilterLabel(v->GetInt()), props);
-        }
-        v = current_->FindVariable(SYP_LIM);
-        if (v) {
-            DrawString(29, yGrid + 1,
-                       SynthInstrument::GetLimiterLabel(v->GetInt()), props);
-        }
-    } else if (it == IT_SAMPLE) {
-        int yGrid = paramBaseY_ + 7;
-        Variable *v = current_->FindVariable(SIP_FILTMODE);
-        if (v) {
-            int m = v->GetInt();
-            if (m < 0 || m > 2)
-                m = 0;
-            DrawString(13, yGrid + 3, sampleFilterLabels[m], props);
-        }
-        v = current_->FindVariable(SIP_INTERPOLATION);
-        if (v) {
-            int m = v->GetInt();
-            if (m < 0 || m > 1)
-                m = 0;
-            DrawString(29, yGrid + 4, sampleInterpLabels[m], props);
-        }
-        v = current_->FindVariable(SIP_LOOPMODE);
-        if (v) {
-            int m = v->GetInt();
-            if (m < 0 || m >= SILM_LAST)
-                m = 0;
-            DrawString(29, yGrid + 5, sampleLoopLabels[m], props);
-        }
-        v = current_->FindVariable(SIP_REVERSE);
-        if (v) {
-            int m = (v->GetInt() != 0) ? 1 : 0;
-            DrawString(29, yGrid + 7, onOffUpperLabels[m], props);
         }
     }
     SetColor(CD_NORMAL);
@@ -1385,8 +1458,7 @@ int InstrumentView::paramBarsKey() const {
     }
     UIField *focus = ((InstrumentView *)this)->GetFocus();
     FourCC focusId = 0;
-    if (focus && !focus->IsStatic() && focus != nameField_ &&
-        focus != loadField_ && focus != saveField_) {
+    if (focus && !focus->IsStatic() && !isActionField(focus)) {
         focusId = ((UIIntVarField *)focus)->GetVariableID();
     }
     key = (key * 131) ^ (int)focusId;
@@ -1407,12 +1479,11 @@ void InstrumentView::drawParamBarsOverlay() {
 
     UIField *focus = GetFocus();
     FourCC focusId = 0;
-    if (focus && !focus->IsStatic() && focus != nameField_ &&
-        focus != loadField_ && focus != saveField_) {
+    if (focus && !focus->IsStatic() && !isActionField(focus)) {
         focusId = ((UIIntVarField *)focus)->GetVariableID();
     }
 
-    GUIRect dirtyRect(11 * cw, (paramBaseY_ + 5) * ch, 39 * cw, 26 * ch);
+    GUIRect dirtyRect(9 * cw, (paramBaseY_ + 5) * ch, 39 * cw, 26 * ch);
     aw.BeginBatchDraw();
 
     for (int i = 0; i < barItemCount_; i++) {
@@ -1433,8 +1504,14 @@ void InstrumentView::drawParamBarsOverlay() {
             continue;
         int by0 = item.charY_ * ch + 2;
         int by1 = (item.charY_ + 1) * ch - 2;
+        int valX0 = (item.charX_ - 2) * cw - 3;
 
         bool isFocused = (focusId != 0 && focusId == item.varId_);
+
+        // Clear both the left-bracket gutter and the right bar/bracket slot
+        GUIRect leftBrkBg(valX0 - 1, item.charY_ * ch, (item.charX_ - 2) * cw,
+                          (item.charY_ + 1) * ch);
+        aw.FillRect(leftBrkBg, CD_BACKGROUND);
 
         GUIRect slotBg(bx0 - 2, item.charY_ * ch, bx1 + 4,
                        (item.charY_ + 1) * ch);
@@ -1471,7 +1548,6 @@ void InstrumentView::drawParamBarsOverlay() {
         }
 
         if (isFocused) {
-            int valX0 = (item.charX_ - 2) * cw - 2;
             int brkX1 = bx1 + 2;
             int topY = item.charY_ * ch;
             int botY = (item.charY_ + 1) * ch - 1;
@@ -1965,6 +2041,7 @@ void InstrumentView::DrawView() {
     }
 
     refreshNameFieldText();
+    refreshPlayFieldText();
     FieldView::Redraw();
     drawModeLabels();
     drawMap();
@@ -1981,6 +2058,10 @@ void InstrumentView::Update(Observable &o, I_ObservableData *d) {
         int fourcc = (unsigned int)d;
 #endif
         switch (fourcc) {
+        case IV_ACTION_PLAY: {
+            toggleInstrumentAudition(false);
+            return;
+        }
         case IV_ACTION_NAME: {
             const char *curName = current_ ? current_->GetUserName() : "";
             NewProjectDialog *dlg =
@@ -2004,6 +2085,7 @@ void InstrumentView::Update(Observable &o, I_ObservableData *d) {
             return;
         }
         case IV_ACTION_LOAD: {
+            stopInstrumentAudition();
             EnsureInstrumentsDir();
             LoadInstrumentModal *dlg = new LoadInstrumentModal(*this);
             DoModal(dlg, LoadInstrumentCallback);

@@ -18,6 +18,7 @@ PlayerMixer::PlayerMixer() {
 		channel_[i] = new PlayerChannel(i);
 		isChannelPlaying_[i] = false;
     }
+    masterChannel_ = new PlayerChannel(MASTER_CHANNEL_INDEX);
 }
 
 bool PlayerMixer::Init(Project *project) {
@@ -29,6 +30,9 @@ bool PlayerMixer::Init(Project *project) {
 
 	AudioMixer *mixer=ms->GetMixBus(STREAM_MIX_BUS) ;
 	mixer->Insert(fileStreamer_) ;
+
+    masterChannel_->SetSourceModule(ms->GetBusMix());
+    masterChannel_->SetMixBusPtr(ms->GetMasterBus());
 
 	project_=project ;
 
@@ -47,6 +51,9 @@ void PlayerMixer::Close()  {
 	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 		channel_[i]->Reset() ;
 	}
+    if (masterChannel_) {
+        masterChannel_->Reset();
+    }
 
 
 	MixerService *ms=MixerService::GetInstance() ;
@@ -152,6 +159,20 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
       channel_[i]->SetReverb(revSize, revAmt);
       channel_[i]->SetTape(tapeAmt);
   }
+  if (masterChannel_) {
+      masterChannel_->SetVolume(
+          fl2fp(mixer->GetChannelVolume(MASTER_CHANNEL_INDEX) / 255.0f));
+      masterChannel_->SetHPFMode(
+          (unsigned char)mixer->GetChannelHPF(MASTER_CHANNEL_INDEX));
+      masterChannel_->SetLPFFreq(mixer->GetChannelLPF(MASTER_CHANNEL_INDEX));
+      masterChannel_->SetDelay(
+          mixer->GetChannelDelaySteps(MASTER_CHANNEL_INDEX),
+          mixer->GetChannelDelayAmt(MASTER_CHANNEL_INDEX));
+      masterChannel_->SetReverb(
+          mixer->GetChannelReverbSize(MASTER_CHANNEL_INDEX),
+          mixer->GetChannelReverbAmt(MASTER_CHANNEL_INDEX));
+      masterChannel_->SetTape(mixer->GetChannelTapeAmt(MASTER_CHANNEL_INDEX));
+  }
   MixerService *ms=MixerService::GetInstance();
   ms->SetPregain(project_->GetPregain());
   ms->SetSoftclip(project_->GetSoftclip(), project_->GetSoftclipGain());
@@ -209,11 +230,23 @@ int PlayerMixer::GetPlayedBufferPercentage() {
 };
 
 void PlayerMixer::SetChannelMute(int channel,bool mode) {
-     channel_[channel]->SetMute(mode) ;
+     if (channel == MASTER_CHANNEL_INDEX && masterChannel_) {
+         masterChannel_->SetMute(mode);
+         return;
+     }
+     if (channel >= 0 && channel < SONG_CHANNEL_COUNT) {
+         channel_[channel]->SetMute(mode) ;
+     }
 }
 
 bool PlayerMixer::IsChannelMuted(int channel) {
-     return channel_[channel]->IsMuted() ;
+     if (channel == MASTER_CHANNEL_INDEX && masterChannel_) {
+         return masterChannel_->IsMuted();
+     }
+     if (channel >= 0 && channel < SONG_CHANNEL_COUNT) {
+         return channel_[channel]->IsMuted() ;
+     }
+     return false;
 }
 
 void PlayerMixer::StartStreaming(const Path &path) {

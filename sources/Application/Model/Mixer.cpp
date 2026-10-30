@@ -1,4 +1,3 @@
-
 #include "Mixer.h"
 #include "Application/Utils/HexBuffers.h"
 
@@ -13,6 +12,8 @@ void Mixer::Clear() {
 
 	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 		channelBus_[i]=i ;
+    }
+    for (int i = 0; i < MIXER_CHANNEL_COUNT; i++) {
         channelVolume_[i] = 0xFF;
         channelHPF_[i] = 0; // 0=OFF, 1=20Hz, 2=90Hz
         channelLPF_[i] = 0; // 0=OFF, else frequency in Hz (20-20000)
@@ -27,14 +28,14 @@ void Mixer::Clear() {
 void Mixer::SaveContent(TiXmlNode *node) {
     saveHexBuffer(node, "BUS", (unsigned char *)channelBus_,
                   SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "VOL", channelVolume_, SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "HPF", channelHPF_, SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "LPF", channelLPF_, SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "DLYS", channelDelaySteps_, SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "DLYA", channelDelayAmt_, SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "REVS", channelReverbSize_, SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "REVA", channelReverbAmt_, SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "TAPE", channelTapeAmt_, SONG_CHANNEL_COUNT);
+    saveHexBuffer(node, "VOL", channelVolume_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "HPF", channelHPF_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "LPF", channelLPF_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "DLYS", channelDelaySteps_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "DLYA", channelDelayAmt_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "REVS", channelReverbSize_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "REVA", channelReverbAmt_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "TAPE", channelTapeAmt_, MIXER_CHANNEL_COUNT);
 } ;
 
 void Mixer::RestoreContent(TiXmlElement *element) {

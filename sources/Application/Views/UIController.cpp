@@ -25,7 +25,7 @@ void UIController::Reset() {
 void UIController::UnMuteAll() {
 
 	Player *player=Player::GetInstance() ;
-	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
+	for (int i=0;i<=SONG_CHANNEL_COUNT;i++) {
 			player->SetChannelMute(i,false) ;
 	} ;
 } ;

@@ -81,8 +81,11 @@ SampleInstrument::SampleInstrument() {
 	 filterMix_=new Variable("filter type",SIP_FILTMIX,0x00) ;
 	 Insert(filterMix_) ;
 
-	 filterMode_=new Variable("filter mode",SIP_FILTMODE,filterMode,3,0) ;
+	 filterMode_=new Variable("filter mode",SIP_FILTMODE,filterMode,FM_LAST,FM_OFF) ;
 	 Insert(filterMode_) ;
+
+	 amp_ = new Variable("amp", SIP_AMP, 0x00);
+	 Insert(amp_);
 
 	 attenuate_=new Variable("attenuate",SIP_ATTENUATE,0xFF) ;
 	 Insert(attenuate_) ;
@@ -116,6 +119,9 @@ SampleInstrument::SampleInstrument() {
 
 	 tapeSend_ = new Variable("tape", SIP_TAPESEND, 0);
 	 Insert(tapeSend_);
+
+	 timeStretch_ = new Variable("timestretch", SIP_TIMESTRETCH, 0x7F);
+	 Insert(timeStretch_);
 
 	 loopStart_=new WatchedVariable("loopstart",SIP_LOOPSTART,0) ;
 	 Insert(loopStart_) ;
@@ -340,6 +346,9 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
              // travel slower in sample
 
              rp->position_ = float(rp->rendFirst_);
+             rp->tsPhase_ = 0.0f;
+             rp->tsPos_[0] = rp->position_;
+             rp->tsPos_[1] = rp->position_;
              rp->baseSpeed_ =
                  fl2fp(source_->GetSampleRate(rp->midiNote_) / driverRate);
              rp->reverse_ = wantReverse || (rp->rendLoopEnd_ < rp->position_);
@@ -449,6 +458,11 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 
 	if (cleanstart) 
   {
+		float initTs = (float)(timeStretch_ ? timeStretch_->GetInt() : 0x7F);
+		rp->tsBase_ = initTs;
+		rp->tsCurrent_ = initTs;
+		rp->tsTarget_ = initTs;
+		rp->tsSpeed_ = 0.0f;
 
 	// Clear retrigger data
 	  
@@ -465,6 +479,8 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 
 		rp->cutoff_=rp->baseFCut_=fl2fp(cutoff_->GetInt()/255.0f); 
 		rp->reso_=rp->baseFRes_=fl2fp(reso_->GetInt()/255.0f) ;
+		rp->svfLp_[0] = rp->svfLp_[1] = 0.0f;
+		rp->svfBp_[0] = rp->svfBp_[1] = 0.0f;
 
 		// Reset voice filter state — long "to end" notes + high reso can
 		// leave height/speed unbounded and start crackling mid-session.
@@ -595,19 +611,30 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
         SYS_MEMSET(buffer, 0, size * 2 * sizeof(fixed));
 
         bool hasUpdaters = !(rp->activeUpdaters_.empty());
+        if (!hasUpdaters) {
+            rp->cutoff_ = rp->baseFCut_ = fl2fp(cutoff_->GetInt() / 255.0f);
+            rp->reso_ = rp->baseFRes_ = fl2fp(reso_->GetInt() / 255.0f);
+        }
 
-        int filterMix = filterMix_->GetInt();
         FilterMode filterMode = (FilterMode)filterMode_->GetInt();
-        bool filterBoost = (filterMode == FM_SCREAM);
-        bool bassyFilter = (filterMode == FM_BASSY);
+        int ampParam = amp_ ? amp_->GetInt() : 0;
+        float ampGain = (ampParam > 0) ? (1.0f + (ampParam / 255.0f) * 7.0f) : 1.0f;
 
-        // Be sure filters are properly initialized
+        bool filtering = (filterMode != FM_OFF) ||
+                         (rp->cutoff_ < fl2fp(254.5f / 255.0f)) ||
+                         (rp->reso_ > i2fp(0));
+        FilterMode effFilterMode =
+            (filterMode == FM_OFF && filtering) ? FM_LOWPASS : filterMode;
 
-        set_filter(channel, FLT_LOWPASS, rp->cutoff_, rp->reso_, filterMix,
-                   bassyFilter);
-
-        filter_t *flt = get_filter(channel);
-        bool filtering = (rp->cutoff_ < i2fp(1)) || (rp->reso_ > i2fp(0));
+        float cutNorm = fp2fl(rp->cutoff_);
+        if (cutNorm < 0.02f) cutNorm = 0.02f;
+        if (cutNorm > 0.99f) cutNorm = 0.99f;
+        float svfF = cutNorm * cutNorm * 0.85f;
+        float resNorm = fp2fl(rp->reso_);
+        if (resNorm < 0.0f) resNorm = 0.0f;
+        if (resNorm > 1.0f) resNorm = 1.0f;
+        float svfQ = 1.0f - (resNorm * 0.92f);
+        if (svfQ < 0.08f) svfQ = 0.08f;
 
         // Process tick-level updates
 
@@ -721,7 +748,23 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 		if (rp->reverse_)
     {
 			fpSpeed=-rp->speed_ ; 
-		} 
+		}
+		int tsInst = timeStretch_ ? timeStretch_->GetInt() : 0x7F;
+		float tsEff = rp->tsCurrent_ + (float)tsInst - rp->tsBase_;
+		if (tsEff < 0.0f) tsEff = 0.0f;
+		if (tsEff > 254.0f) tsEff = 254.0f;
+		bool useTimeStretch = ((fabs(tsEff - 127.0f) > 0.25f) || rp->tsSpeed_ > 0.0f) &&
+		                      (loopMode != SILM_GRAIN) && (loopMode != SILM_OSC);
+		float timeRatio = 1.0f;
+		if (useTimeStretch) {
+			if (tsEff < 127.0f) {
+				float norm = tsEff / 127.0f;
+				timeRatio = 0.05f + 0.95f * norm * norm;
+			} else {
+				float norm = (tsEff - 127.0f) / 127.0f;
+				timeRatio = 1.0f + norm * (1.0f + 2.0f * norm);
+			}
+		}
 
     fixed s1,s2,t2,eta,inveta;
 		s2=0 ; t2=0 ;
@@ -765,18 +808,8 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 		int rpKrateCount=rp->krateCount_ ;
 		FeedbackMode rpFeedbackMode=rp->feedbackMode_ ;
 
-		fixed *fltSpeed=flt->speed ;
-		fixed *fltHeight=flt->height ;
-		fixed fltMix=flt->mix ;
-		fixed fltMixInv=FP_ONE-fltMix ;
-		fixed *fltDelay=flt->hipdelay ;
-		fixed fltParm1=flt->freq ;
-		fixed fltParm2=flt->reso ;
-		fixed fltDirt=flt->dirt ;
-
-		fixed *fltSpeedPtr=0 ;
-		fixed *fltDelayPtr=0 ;
-		fixed *fltHeightPtr=0 ;
+		(void)f_k;
+		(void)f_s;
 
     int dsBaseFrame = (rp->rendLoopStart_ < rp->rendLoopEnd_)
                           ? rp->rendLoopStart_
@@ -900,6 +933,32 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 			  if (rpKrateCount--==0) {
 					rpKrateCount=KRATE_SAMPLE_COUNT ;
 
+					if (rp->tsSpeed_ > 0.0f && rp->tsCurrent_ != rp->tsTarget_) {
+						if (rp->tsCurrent_ < rp->tsTarget_) {
+							rp->tsCurrent_ += rp->tsSpeed_;
+							if (rp->tsCurrent_ >= rp->tsTarget_) {
+								rp->tsCurrent_ = rp->tsTarget_;
+								rp->tsSpeed_ = 0.0f;
+							}
+						} else {
+							rp->tsCurrent_ -= rp->tsSpeed_;
+							if (rp->tsCurrent_ <= rp->tsTarget_) {
+								rp->tsCurrent_ = rp->tsTarget_;
+								rp->tsSpeed_ = 0.0f;
+							}
+						}
+						tsEff = rp->tsCurrent_ + (float)tsInst - rp->tsBase_;
+						if (tsEff < 0.0f) tsEff = 0.0f;
+						if (tsEff > 254.0f) tsEff = 254.0f;
+						if (tsEff < 127.0f) {
+							float norm = tsEff / 127.0f;
+							timeRatio = 0.05f + 0.95f * norm * norm;
+						} else {
+							float norm = (tsEff - 127.0f) / 127.0f;
+							timeRatio = 1.0f + norm * (1.0f + 2.0f * norm);
+						}
+					}
+
 					if (hasUpdaters) {
 						doKRateUpdate(channel) ;
 						struct RUParams rup ;
@@ -921,8 +980,20 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 						rp->fbMix_=rp->baseFbMix_+rup.fbMixOffset_ ;
 						rp->fbTun_=rp->baseFbTun_+rup.fbTunOffset_ ;
 
-						set_filter(channel,FLT_LOWPASS,rp->cutoff_,rp->reso_,filterMix,bassyFilter);
-						filtering=(rp->cutoff_<i2fp(1))||(rp->reso_>i2fp(0)) ;
+						filtering = (filterMode != FM_OFF) ||
+						            (rp->cutoff_ < fl2fp(254.5f / 255.0f)) ||
+						            (rp->reso_ > i2fp(0));
+						effFilterMode =
+						    (filterMode == FM_OFF && filtering) ? FM_LOWPASS : filterMode;
+						cutNorm = fp2fl(rp->cutoff_);
+						if (cutNorm < 0.02f) cutNorm = 0.02f;
+						if (cutNorm > 0.99f) cutNorm = 0.99f;
+						svfF = cutNorm * cutNorm * 0.85f;
+						resNorm = fp2fl(rp->reso_);
+						if (resNorm < 0.0f) resNorm = 0.0f;
+						if (resNorm > 1.0f) resNorm = 1.0f;
+						svfQ = 1.0f - (resNorm * 0.92f);
+						if (svfQ < 0.08f) svfQ = 0.08f;
 
 						rp->feedbackIn_ = (feedbackIn-feedback_[channel])/2 ;
 
@@ -975,13 +1046,6 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 				i2 = (short *)wavbuf ;
 			}
 		}
-
-				if (filtering) 
-        {
-					fltSpeedPtr=fltSpeed ;
-					fltHeightPtr=fltHeight ;
-					fltDelayPtr=fltDelay ;
-				}
 
 				float grainOutCh[2] = {0.0f, 0.0f};
 				if (loopMode == SILM_GRAIN) {
@@ -1065,12 +1129,104 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 							gpos = (float)gMax - ((float)gMin - gpos);
 						rp->grainPos_[g] = gpos;
 					}
+				} else if (useTimeStretch) {
+					int sMin = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+					               ? rp->rendLoopStart_
+					               : rp->rendLoopEnd_;
+					int sMax = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+					               ? rp->rendLoopEnd_
+					               : rp->rendLoopStart_;
+					if (rp->rendFirst_ < sMin)
+						sMin = rp->rendFirst_;
+					if (rp->rendFirst_ > sMax)
+						sMax = rp->rendFirst_;
+					if (sMin < 0)
+						sMin = 0;
+					if (sMax > pcmFrames)
+						sMax = pcmFrames;
+					int sSpan = sMax - sMin;
+					if (sSpan < 4)
+						sSpan = 4;
+
+					float curMacroPos =
+					    (float)((((char *)input) - wavbuf) / (2 * channelCount)) +
+					    fp2fl(fpPos);
+					float grainLen = 1536.0f;
+					if ((float)sSpan * 0.5f < grainLen)
+						grainLen = (float)sSpan * 0.5f;
+					if (grainLen < 64.0f)
+						grainLen = 64.0f;
+
+					float pitchStep = fp2fl(rp->speed_);
+					if (pitchStep < 0.0f)
+						pitchStep = -pitchStep;
+					float signedPitchStep = rpReverse ? -pitchStep : pitchStep;
+					float phaseInc = pitchStep / grainLen;
+					if (phaseInc < 0.0001f)
+						phaseInc = 0.0001f;
+					if (phaseInc > 0.25f)
+						phaseInc = 0.25f;
+
+					float prevPh = rp->tsPhase_;
+					float ph0 = prevPh + phaseInc;
+					if (ph0 >= 1.0f) {
+						ph0 -= (float)floor(ph0);
+						rp->tsPos_[0] = curMacroPos;
+					}
+					if (prevPh < 0.5f && ph0 >= 0.5f) {
+						rp->tsPos_[1] = curMacroPos;
+					}
+					rp->tsPhase_ = ph0;
+
+					float t0 = (ph0 < 0.5f) ? (ph0 * 2.0f) : ((1.0f - ph0) * 2.0f);
+					float w0 = t0 * t0 * (3.0f - 2.0f * t0);
+					float weights[2] = {w0, 1.0f - w0};
+					short *pcmBase = (short *)wavbuf;
+
+					for (int g = 0; g < 2; g++) {
+						float gpos = rp->tsPos_[g];
+						if (gpos >= (float)sMax) {
+							gpos = (loopMode == SILM_ONESHOT)
+							           ? (float)(sMax - 1)
+							           : ((float)sMin + (gpos - (float)sMax));
+						}
+						if (gpos < (float)sMin) {
+							gpos = (loopMode == SILM_ONESHOT)
+							           ? (float)sMin
+							           : ((float)sMax - ((float)sMin - gpos));
+						}
+						int idx0 = (int)gpos;
+						float frac = gpos - (float)idx0;
+						if (idx0 < sMin)
+							idx0 = sMin;
+						if (idx0 >= sMax - 1)
+							idx0 = sMax - 2;
+						if (idx0 < 0)
+							idx0 = 0;
+						int idx1 = idx0 + 1;
+						if (idx1 >= pcmFrames)
+							idx1 = pcmFrames - 1;
+						float wg = weights[g];
+						if (channelCount == 2) {
+							float l0 = (float)pcmBase[idx0 * 2];
+							float l1 = (float)pcmBase[idx1 * 2];
+							float r0 = (float)pcmBase[idx0 * 2 + 1];
+							float r1 = (float)pcmBase[idx1 * 2 + 1];
+							grainOutCh[0] += (l0 + (l1 - l0) * frac) * wg;
+							grainOutCh[1] += (r0 + (r1 - r0) * frac) * wg;
+						} else {
+							float m0 = (float)pcmBase[idx0];
+							float m1 = (float)pcmBase[idx1];
+							grainOutCh[0] += (m0 + (m1 - m0) * frac) * wg;
+						}
+						rp->tsPos_[g] = gpos + signedPitchStep;
+					}
 				}
 
 				for (int i=0;i<channelCount;i++) 
         {
 					t2=s2 ; // move L to R if necessary
-					if (loopMode == SILM_GRAIN) {
+					if (loopMode == SILM_GRAIN || useTimeStretch) {
 						s1 = fl2fp(grainOutCh[i]);
 					} else {
 					s1=i2fp(*i1++) ;
@@ -1137,58 +1293,54 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 
 					s2=(s2&mask);
 
+				// apply AMP gain + soft clip
+					if (ampParam > 0) {
+						float x = (fp2fl(s2) / 32768.0f) * ampGain;
+						if (x > 1.0f || x < -1.0f) {
+							x = x / (1.0f + 0.35f * (float)fabs(x));
+							if (x > 1.0f) x = 1.0f;
+							if (x < -1.0f) x = -1.0f;
+						}
+						s2 = fl2fp(x * 32768.0f);
+					}
+
 				// apply volume
 
           s2=fp_mul(s2,volfactor) ;
 
-				// apply filtering if needed
+				// apply SHAPES-style 5-mode Chamberlin SVF filter if enabled
 
-					if (filtering) {
+					if (effFilterMode != FM_OFF) {
+						float inNorm = fp2fl(s2) / 32768.0f;
+						float hp = inNorm - rp->svfLp_[i] - svfQ * rp->svfBp_[i];
+						rp->svfBp_[i] += svfF * hp;
+						rp->svfLp_[i] += svfF * rp->svfBp_[i];
 
-						fixed lpin =fp_mul(s2,fltMixInv) ;
-      			fixed hpin = -fp_mul(s2,fltMix) ;
-							
-    				fixed difr = fp_sub(lpin,*fltHeightPtr);
+						if (rp->svfBp_[i] > 4.0f) rp->svfBp_[i] = 4.0f;
+						if (rp->svfBp_[i] < -4.0f) rp->svfBp_[i] = -4.0f;
+						if (rp->svfLp_[i] > 4.0f) rp->svfLp_[i] = 4.0f;
+						if (rp->svfLp_[i] < -4.0f) rp->svfLp_[i] = -4.0f;
 
-						// Introduce non-linearity if screamin'
-
-						if (filterBoost) {
-							if (*fltSpeedPtr<-FP_ONE) {
-								*fltSpeedPtr=-f_s ;
-							} else if (*fltSpeedPtr>FP_ONE) {
-								*fltSpeedPtr=f_s ;
-							};
-							*fltSpeedPtr=fp_mul(*fltSpeedPtr,fltDirt) ;
+						float outNorm = inNorm;
+						switch (effFilterMode) {
+						case FM_LOWPASS:
+							outNorm = rp->svfLp_[i];
+							break;
+						case FM_HIGHPASS:
+							outNorm = hp;
+							break;
+						case FM_BANDPASS:
+							outNorm = rp->svfBp_[i];
+							break;
+						case FM_LPHP:
+							outNorm = (rp->svfLp_[i] + hp) * 0.7f;
+							break;
+						default:
+							break;
 						}
-
-						*fltSpeedPtr = fp_mul(*fltSpeedPtr,fltParm2);		//mul by res, it's some kind of inertia. caution to feedback
-/*HOG:5*/				*fltSpeedPtr = fp_add(*fltSpeedPtr,fp_mul(difr,fltParm1)); //mul by cutoff, less cutoff = no sound, so it's better not be 0.
-
-						*fltHeightPtr += *fltSpeedPtr ;
-						*fltHeightPtr += *fltDelayPtr-hpin ;
-
-						// Hard cap — with long sliced "to end" notes, unbounded
-						// reso feedback overflows fixed and turns into crackle.
-						{
-							const fixed lim = i2fp(32768);
-							if (*fltSpeedPtr > FP_ONE) {
-								*fltSpeedPtr = FP_ONE;
-							} else if (*fltSpeedPtr < -FP_ONE) {
-								*fltSpeedPtr = -FP_ONE;
-							}
-							if (*fltHeightPtr > lim) {
-								*fltHeightPtr = lim;
-							} else if (*fltHeightPtr < -lim) {
-								*fltHeightPtr = -lim;
-							}
-						}
-
-						s2=*fltHeightPtr ;
-
-						*fltDelayPtr=hpin ;
-						fltDelayPtr++ ;
-						fltHeightPtr++ ;
-						fltSpeedPtr++ ;
+						if (outNorm > 1.25f) outNorm = 1.25f;
+						if (outNorm < -1.25f) outNorm = -1.25f;
+						s2 = fl2fp(outNorm * 32768.0f);
 					}
 					// apply attenuation
 					s2=fp_mul(s2,fpattenuate) ;
@@ -1220,8 +1372,8 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 
 			// Computes new pos for next input sample
 			// fpPos is always relative to 'input' pointer
-		
-			   fpPos=fp_add(fpPos,fpSpeed) ;
+			   fixed fpStep = useTimeStretch ? fp_mul(fpSpeed, fl2fp(timeRatio)) : fpSpeed;
+			   fpPos=fp_add(fpPos,fpStep) ;
          int delta=fp2i(fpPos) ;
          input+=channelCount*delta;
          fpPos = fp_sub(fpPos,i2fp(delta)) ;
@@ -1776,6 +1928,28 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
 					}
 				}
 				rp->couldClick_ = SHOULD_KILL_CLICKS;
+			}
+			break ;
+		case I_CMD_TSTR:
+			{
+				float target = float(value & 0xFF);
+				if (target > 254.0f)
+					target = 254.0f;
+				float speedTicks = float(value >> 8);
+				if (speedTicks <= 0.0f) {
+					rp->tsCurrent_ = target;
+					rp->tsTarget_ = target;
+					rp->tsSpeed_ = 0.0f;
+				} else {
+					int sampleCount = int(4 * SyncMaster::GetInstance()->GetTickSampleCount());
+					if (sampleCount < 1)
+						sampleCount = 1;
+					rp->tsTarget_ = target;
+					rp->tsSpeed_ = fabs(target - rp->tsCurrent_) * float(KRATE_SAMPLE_COUNT) /
+					               (speedTicks * float(sampleCount));
+					if (rp->tsSpeed_ < 0.0001f)
+						rp->tsSpeed_ = 0.0001f;
+				}
 			}
 			break ;
 		default:

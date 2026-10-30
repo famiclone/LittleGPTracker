@@ -32,6 +32,8 @@ public:
 	void SetMute(bool muted) ;
 	bool IsMuted() ;
 	void SetMixBus(int i) ;
+    void SetMixBusPtr(MixBus *bus);
+    void SetSourceModule(AudioModule *source);
     void SetVolume(fixed volume);
     void SetHPFMode(unsigned char mode);
     void ApplyHPF(fixed *buffer, int samplecount);
@@ -53,6 +55,7 @@ public:
 
 	int index_ ;
 	I_Instrument *instr_ ;
+    AudioModule *sourceModule_;
 	bool muted_ ;
     fixed volume_;
     int busIndex_ ;
