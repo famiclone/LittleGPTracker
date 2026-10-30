@@ -18,6 +18,7 @@ enum SampleInstrumentLoopMode {
     SILM_OSC,
     //	SILM_OSCFINE,
     SILM_LOOPSYNC,
+    SILM_GRAIN,
     SILM_LAST
 };
 
@@ -37,6 +38,7 @@ enum SampleInstrumentLoopMode {
 #define SIP_INTERPOLATION   MAKE_FOURCC('I','N','T','P')
 #define SIP_SAMPLE 		    MAKE_FOURCC('S','M','P','L')
 #define SIP_SLICES 		    MAKE_FOURCC('S','L','C','S')
+#define SIP_SLICETOEND		MAKE_FOURCC('S','T','E','N')
 #define SIP_FILTMODE		MAKE_FOURCC('F','I','M','O') 
 #define SIP_ATTENUATE		MAKE_FOURCC('F','I','A','T')
 #define SIP_FILTMIX			MAKE_FOURCC('F','M','I','X')
@@ -49,6 +51,13 @@ enum SampleInstrumentLoopMode {
 #define SIP_PRINTFX MAKE_FOURCC('P', 'R', 'F', 'X')
 #define SIP_IR_PAD MAKE_FOURCC('I', 'R', 'P', 'D')
 #define SIP_IR_WET MAKE_FOURCC('I', 'R', 'W', 'T')
+#define SIP_REVERSE MAKE_FOURCC('R', 'V', 'R', 'S')
+#define SIP_TRANSPOSE MAKE_FOURCC('T', 'R', 'S', 'P')
+#define SIP_DELSEND MAKE_FOURCC('D', 'L', 'S', 'D')
+#define SIP_REVSEND MAKE_FOURCC('R', 'V', 'S', 'D')
+#define SIP_TAPESEND MAKE_FOURCC('T', 'P', 'S', 'D')
+#define SIP_TIMESTRETCH MAKE_FOURCC('T', 'S', 'T', 'R')
+#define SIP_AMP MAKE_FOURCC('S', 'A', 'M', 'P')
 
 #define FB_BUFFER_LENGTH 3500 // (in samples)
 
@@ -90,6 +99,9 @@ public:
        int GetLoopEnd();
        virtual const char *GetName();
        virtual const char *GetFileName();
+       virtual unsigned char GetDelaySend();
+       virtual unsigned char GetReverbSend();
+       virtual unsigned char GetTapeSend();
  
   static void EnableDownsamplingLegacy();
 
@@ -131,6 +143,14 @@ private:
 	   Variable *pan_ ;
 	   Variable *loopMode_ ;
 	   Variable *slices_ ;
+	   Variable *sliceToEnd_ ;
+	   Variable *reverse_ ;
+	   Variable *transpose_ ;
+	   Variable *delSend_ ;
+	   Variable *revSend_ ;
+	   Variable *tapeSend_ ;
+	   Variable *timeStretch_ ;
+	   Variable *amp_ ;
 	   Variable *interpolation_ ;
        Variable *printFx_;
        Variable *irPad_;

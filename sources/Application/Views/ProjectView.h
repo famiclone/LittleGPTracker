@@ -4,7 +4,9 @@
 #include "BaseClasses/FieldView.h"
 #include "Foundation/Observable.h"
 #include "ViewData.h"
+#include <string>
 
+class UIActionField;
 
 class ProjectView: public FieldView,public I_Observer {
 public:
@@ -22,15 +24,20 @@ public:
 
 	void OnLoadProject() ;
 	void OnSaveAsProject(char * data) ;
+	void OnRenameProject(char *data) ;
 	void OnPurgeInstruments(bool removeFromDisk) ;
 	void OnQuit() ;
 
 protected:
 private:
+  void refreshNameField() ;
+  std::string currentShortName() ;
+
   Project *project_;
   // Debug
   unsigned long lastTick_;
   unsigned long lastClock_;
   UIField *tempoField_;
+  UIActionField *nameField_;
 } ;
 #endif

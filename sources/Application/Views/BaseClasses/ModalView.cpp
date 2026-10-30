@@ -38,6 +38,18 @@ void ModalView::SetWindow(int width, int height) {
     }
     ClearRect(-1, -1, width + 2, height + 2);
 
+    // Opaque interior fill so parent text / pixel overlays cannot ghost
+    // through unchanged space cells skipped by the screen cache.
+    SetColor(CD_BACKGROUND);
+    GUITextProperties fillProps;
+    fillProps.invert_ = false;
+    char fill[41];
+    memset(fill, ' ', width);
+    fill[width] = 0;
+    for (int row = 0; row < height; row++) {
+        DrawString(0, row, fill, fillProps);
+    }
+
     SetColor(CD_BORDER);
     GUITextProperties props;
     props.invert_ = true;

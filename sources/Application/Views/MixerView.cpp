@@ -2,11 +2,14 @@
 #include "Application/Mixer/MixerService.h"
 #include "Application/Model/Mixer.h"
 #include "Application/Player/Player.h"
+#include "Application/Player/PlayerChannel.h"
+#include "Application/Player/SyncMaster.h"
 #include "Application/Utils/char.h"
 #include "UIController.h"
 #include "VuMeterUtil.h"
 #include <iostream>
 #include <sstream>
+#include <stdio.h>
 #include <string>
 
 MixerView::MixerView(GUIWindow &w,ViewData *viewData):View(w,viewData) {
@@ -28,11 +31,6 @@ void MixerView::onStart() {
 	Player *player=Player::GetInstance() ;
 	unsigned char from=viewData_->songX_ ;
 	unsigned char to=from ;
-	//if (clipboard_.active_) {
-	//	GUIRect r=getSelectionRect();
-	//	from=r.Left() ;
-	//	to=r.Right() ;
-	//}
 	player->OnStartButton(PM_SONG,from,false,to) ;
 } ;
 
@@ -43,26 +41,29 @@ void MixerView::onStop() {
 	player->OnStartButton(PM_SONG,from,true,to) ;
 }
 
-// Stay on the same column as SongView
-void MixerView::OnFocus() { viewData_->mixerCol_ = viewData_->songX_; }
+// Stay on the same column as SongView (unless already on Master column)
+void MixerView::OnFocus() {
+    if (viewData_->mixerCol_ != MASTER_CHANNEL_INDEX) {
+        viewData_->mixerCol_ = viewData_->songX_;
+    }
+}
 
 void MixerView::updateCursor(int dx,int dy) {
     if (dy != 0) {
-        // UP/DOWN cycles between rows 1, 2, 3
+        // UP/DOWN cycles between rows 1..6 (VOL, HPF, LPF, DLY, REV, TPE)
         if (dy < 0) {
-            mixerRow_ = (mixerRow_ == 1) ? 3 : mixerRow_ - 1;
+            mixerRow_ = (mixerRow_ == 1) ? 6 : mixerRow_ - 1;
         } else {
-            mixerRow_ = (mixerRow_ == 3) ? 1 : mixerRow_ + 1;
+            mixerRow_ = (mixerRow_ == 6) ? 1 : mixerRow_ + 1;
         }
 		isDirty_ = true;
     }
     if (dx != 0) {
-        // LEFT/RIGHT switches between channels (0-7 only, Master is
-        // display-only)
+        // LEFT/RIGHT switches between channels 0..7 and 8 (Master)
         int x = viewData_->mixerCol_;
 		x += dx;
 		if (x < 0) x = 0;
-		if (x > 7) x = 7;
+		if (x > MASTER_CHANNEL_INDEX) x = MASTER_CHANNEL_INDEX;
 		viewData_->mixerCol_ = x;
 		isDirty_ = true;
 	}
@@ -76,6 +77,11 @@ void MixerView::toggleMute() {
 
 void MixerView::toggleSolo() {
 	int col=viewData_->mixerCol_ ;
+    if (col == MASTER_CHANNEL_INDEX) {
+        unMuteAll();
+        soloChannel_ = -1;
+        return;
+    }
 	bool entering=(soloChannel_!=col) ;
 	UIController::GetInstance()->SwitchSoloMode(col,col,entering) ;
     soloChannel_ = entering ? col : -1;
@@ -134,15 +140,17 @@ void MixerView::processNormalButtonMask(unsigned int mask) {
         } else if (mask & EPBM_UP) {
             // R + UP = go back to previous view
             ViewEvent ve(VET_SWITCH_VIEW, &previousViewType_);
-            // Go back to the same column as in MixerView
-            viewData_->songX_ = viewData_->mixerCol_;
+            if (viewData_->mixerCol_ < SONG_CHANNEL_COUNT) {
+                viewData_->songX_ = viewData_->mixerCol_;
+            }
             SetChanged();
             NotifyObservers(&ve);
         } else if (mask & EPBM_RIGHT) {
             ViewType vt = VT_TABLE;
             ViewEvent ve(VET_SWITCH_VIEW, &vt);
-            // Go back to the same column as in MixerView
-            viewData_->songX_ = viewData_->mixerCol_;
+            if (viewData_->mixerCol_ < SONG_CHANNEL_COUNT) {
+                viewData_->songX_ = viewData_->mixerCol_;
+            }
             unsigned char *data = viewData_->GetCurrentSongPointer();
             if (*data != 0xFF) { // Set chain
                 viewData_->currentChain_ = *data;
@@ -158,14 +166,178 @@ void MixerView::processNormalButtonMask(unsigned int mask) {
         }
     } else if (mask & EPBM_B) {
         if (mask & EPBM_A) {
-            // B + A = cut: reset volume to full
-            Mixer::GetInstance()->SetChannelVolume(viewData_->mixerCol_, 0xFF);
+            // B + A = reset parameter on current mixerRow_
+            Mixer *m = Mixer::GetInstance();
+            int col = viewData_->mixerCol_;
+            switch (mixerRow_) {
+            case 1:
+                m->SetChannelVolume(col, 0xFF);
+                SetNotification("              Volume: FF");
+                break;
+            case 2:
+                m->SetChannelHPF(col, 0);
+                SetNotification("      High Pass Filter: OFF");
+                break;
+            case 3:
+                m->SetChannelLPF(col, 0);
+                SetNotification("       Low Pass Filter: OFF");
+                break;
+            case 4:
+                m->SetChannelDelaySteps(col, 0);
+                SetNotification("              Delay: OFF");
+                break;
+            case 5:
+                m->SetChannelReverbSize(col, 0);
+                SetNotification("             Reverb: OFF");
+                break;
+            case 6:
+                m->SetChannelTapeAmt(col, 0);
+                SetNotification("               Tape: OFF");
+                break;
+            default:
+                break;
+            }
             isDirty_ = true;
         }
     } else if (mask & EPBM_A) {
-        if (mixerRow_ == 3) {
+        if (mixerRow_ == 6) {
+            // TPE: A+Up/Down = coarse +-16, A+Left/Right = fine +-4
+            Mixer *m = Mixer::GetInstance();
+            int col = viewData_->mixerCol_;
+            int amt = m->GetChannelTapeAmt(col);
+            if (mask & EPBM_UP) {
+                amt += 16;
+            } else if (mask & EPBM_DOWN) {
+                amt -= 16;
+            } else if (mask & EPBM_RIGHT) {
+                amt += 4;
+            } else if (mask & EPBM_LEFT) {
+                amt -= 4;
+            }
+            if (amt < 0)
+                amt = 0;
+            if (amt > 255)
+                amt = 255;
+            if (amt != m->GetChannelTapeAmt(col)) {
+                m->SetChannelTapeAmt(col, (unsigned char)amt);
+                isDirty_ = true;
+            }
+            if (amt == 0) {
+                SetNotification("               Tape: OFF");
+            } else {
+                char notifBuf[48];
+                sprintf(notifBuf, "            Tape FX: %02X", amt);
+                SetNotification(notifBuf);
+            }
+        } else if (mixerRow_ == 5) {
+            // REV: A+Up/Down = room size, A+Left/Right = wet mix
+            Mixer *m = Mixer::GetInstance();
+            int col = viewData_->mixerCol_;
+            int size = m->GetChannelReverbSize(col);
+            int amt = m->GetChannelReverbAmt(col);
+
+            if (mask & EPBM_UP) {
+                if (size < CHANNEL_REVERB_MAX_SIZE) {
+                    size++;
+                }
+                if (size > 0 && amt == 0) {
+                    amt = 0x60;
+                }
+            } else if (mask & EPBM_DOWN) {
+                if (size > 0) {
+                    size--;
+                }
+            } else if (mask & EPBM_RIGHT) {
+                amt = amt + 8;
+                if (amt > 255) {
+                    amt = 255;
+                }
+                if (size == 0 && amt > 0) {
+                    size = 4;
+                }
+            } else if (mask & EPBM_LEFT) {
+                amt = amt - 8;
+                if (amt < 0) {
+                    amt = 0;
+                }
+            }
+
+            if (size != m->GetChannelReverbSize(col) ||
+                amt != m->GetChannelReverbAmt(col)) {
+                m->SetChannelReverbSize(col, (unsigned char)size);
+                m->SetChannelReverbAmt(col, (unsigned char)amt);
+                isDirty_ = true;
+            }
+            if (size == 0) {
+                SetNotification("             Reverb: OFF");
+            } else {
+                char notifBuf[48];
+                sprintf(notifBuf, "      Reverb: sz %d  mix:%02X", size, amt);
+                SetNotification(notifBuf);
+            }
+        } else if (mixerRow_ == 4) {
+            // DLY: A+Up/Down = delay time in phrase steps,
+            // A+Left/Right = wet mix / feedback amount
+            Mixer *m = Mixer::GetInstance();
+            int col = viewData_->mixerCol_;
+            int steps = m->GetChannelDelaySteps(col);
+            int amt = m->GetChannelDelayAmt(col);
+            int maxSteps = 16;
+            float stepSamples =
+                SyncMaster::GetInstance()->GetStepSampleCount();
+            if (stepSamples < 1.0f) {
+                stepSamples = 1.0f;
+            }
+            int fit = (int)(CHANNEL_DELAY_MAX_FRAMES / stepSamples);
+            if (fit < 1) {
+                fit = 1;
+            }
+            if (fit < maxSteps) {
+                maxSteps = fit;
+            }
+
+            if (mask & EPBM_UP) {
+                if (steps < maxSteps) {
+                    steps++;
+                }
+                if (steps > 0 && amt == 0) {
+                    amt = 0x80;
+                }
+            } else if (mask & EPBM_DOWN) {
+                if (steps > 0) {
+                    steps--;
+                }
+            } else if (mask & EPBM_RIGHT) {
+                amt = amt + 8;
+                if (amt > 255) {
+                    amt = 255;
+                }
+                if (steps == 0 && amt > 0) {
+                    steps = 1;
+                }
+            } else if (mask & EPBM_LEFT) {
+                amt = amt - 8;
+                if (amt < 0) {
+                    amt = 0;
+                }
+            }
+
+            if (steps != m->GetChannelDelaySteps(col) ||
+                amt != m->GetChannelDelayAmt(col)) {
+                m->SetChannelDelaySteps(col, (unsigned char)steps);
+                m->SetChannelDelayAmt(col, (unsigned char)amt);
+                isDirty_ = true;
+            }
+            if (steps == 0) {
+                SetNotification("              Delay: OFF");
+            } else {
+                char notifBuf[48];
+                sprintf(notifBuf, "       Delay: %d st  mix:%02X", steps, amt);
+                SetNotification(notifBuf);
+            }
+        } else if (mixerRow_ == 3) {
             // On LPF row: A+Up/Down = coarse ×2/÷2, A+Left/Right = fine
-            // ±10Hz A alone (no direction) = toggle off/1000Hz
+            // ±10Hz
             Mixer *m = Mixer::GetInstance();
             int col = viewData_->mixerCol_;
             unsigned short freq = m->GetChannelLPF(col);
@@ -210,7 +382,6 @@ void MixerView::processNormalButtonMask(unsigned int mask) {
                 m->SetChannelLPF(col, newFreq);
                 isDirty_ = true;
             }
-            // show notification
             if (newFreq == 0) {
                 SetNotification("       Low Pass Filter: OFF");
             } else {
@@ -275,7 +446,6 @@ void MixerView::processNormalButtonMask(unsigned int mask) {
         }
     } else {
         // Normal cursor movement (no modifier)
-		// This works everywhere, including Master channel
 		if (mask & EPBM_UP)
 			updateCursor(0, -1);
 		if (mask & EPBM_DOWN)
@@ -351,14 +521,15 @@ void MixerView::DrawView() {
 
     DrawString(pos._x, pos._y, buffer.c_str(), props);
 
-    // Draw mixer grid with row labels
+    // Draw mixer grid with row labels (8 tracks + Master column 8)
     pos = anchor;
     short dx = 3;
+    short masterSpacing = 1;
     Mixer *mixer = Mixer::GetInstance();
     Player *playerInst = Player::GetInstance();
     GUITextProperties rowLabelProps;
 
-    // Row 0: Track number / Solo / Mute
+    // Row 0: Track number / Master / Mute
     if (mixerRow_ == 0) {
         rowLabelProps.invert_ = true;
         SetColor(CD_HILITE2);
@@ -368,19 +539,21 @@ void MixerView::DrawView() {
     }
     DrawString(pos._x - 3, pos._y, " ", rowLabelProps);
 
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < MIXER_CHANNEL_COUNT; i++) {
+        int colX = anchor._x + i * dx + ((i == MASTER_CHANNEL_INDEX) ? masterSpacing : 0);
         props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 0);
         SetColor((i == viewData_->mixerCol_ && mixerRow_ == 0) ? CD_HILITE2
                                                                : CD_COL_TITLE);
 
         if (playerInst->IsChannelMuted(i)) {
-            DrawString(pos._x, pos._y, "M ", props);
+            DrawString(colX, pos._y, "M ", props);
+        } else if (i == MASTER_CHANNEL_INDEX) {
+            DrawString(colX, pos._y, "MS", props);
         } else {
             int bus = mixer->GetBus(i);
             hex2char(bus, hex);
-            DrawString(pos._x, pos._y, hex, props);
+            DrawString(colX, pos._y, hex, props);
         }
-        pos._x += dx;
     }
 
     // Row 1: volumes
@@ -395,16 +568,15 @@ void MixerView::DrawView() {
     }
     DrawString(pos._x - 5, pos._y, "VOL", rowLabelProps);
 
-    pos._x = anchor._x;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < MIXER_CHANNEL_COUNT; i++) {
+        int colX = anchor._x + i * dx + ((i == MASTER_CHANNEL_INDEX) ? masterSpacing : 0);
         props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 1);
         SetColor((i == viewData_->mixerCol_ && mixerRow_ == 1) ? CD_HILITE2
                                                                : CD_NORMAL);
 
         int vol = mixer->GetChannelVolume(i);
         hex2char(vol, hex);
-        DrawString(pos._x, pos._y, hex, props);
-        pos._x += dx;
+        DrawString(colX, pos._y, hex, props);
     }
 
     // Row 2: HPF mode
@@ -419,8 +591,8 @@ void MixerView::DrawView() {
     }
     DrawString(pos._x - 5, pos._y, "HPF", rowLabelProps);
 
-    pos._x = anchor._x;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < MIXER_CHANNEL_COUNT; i++) {
+        int colX = anchor._x + i * dx + ((i == MASTER_CHANNEL_INDEX) ? masterSpacing : 0);
         props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 2);
         SetColor((i == viewData_->mixerCol_ && mixerRow_ == 2) ? CD_HILITE2 : CD_NORMAL);
 
@@ -436,8 +608,7 @@ void MixerView::DrawView() {
         } else {
             code[0] = '9'; code[1] = '0'; code[2] = ' '; code[3] = '\0';
         }
-        DrawString(pos._x, pos._y, code, props);
-        pos._x += dx;
+        DrawString(colX, pos._y, code, props);
     }
 
     // Row 3: LPF frequency
@@ -452,8 +623,8 @@ void MixerView::DrawView() {
     }
     DrawString(pos._x - 5, pos._y, "LPF", rowLabelProps);
 
-    pos._x = anchor._x;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < MIXER_CHANNEL_COUNT; i++) {
+        int colX = anchor._x + i * dx + ((i == MASTER_CHANNEL_INDEX) ? masterSpacing : 0);
         props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 3);
         SetColor((i == viewData_->mixerCol_ && mixerRow_ == 3) ? CD_HILITE2 : CD_NORMAL);
 
@@ -479,8 +650,100 @@ void MixerView::DrawView() {
             lpfCode[2] = 'k';
             lpfCode[3] = ' '; lpfCode[4] = '\0';
         }
-        DrawString(pos._x, pos._y, lpfCode, props);
-        pos._x += dx;
+        DrawString(colX, pos._y, lpfCode, props);
+    }
+
+    // Row 4: Delay (tempo-synced steps)
+    pos = anchor;
+    pos._y += 5;
+    if (mixerRow_ == 4) {
+        rowLabelProps.invert_ = true;
+        SetColor(CD_HILITE2);
+    } else {
+        rowLabelProps.invert_ = false;
+        SetColor(CD_NORMAL);
+    }
+    DrawString(pos._x - 5, pos._y, "DLY", rowLabelProps);
+
+    for (int i = 0; i < MIXER_CHANNEL_COUNT; i++) {
+        int colX = anchor._x + i * dx + ((i == MASTER_CHANNEL_INDEX) ? masterSpacing : 0);
+        props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 4);
+        SetColor((i == viewData_->mixerCol_ && mixerRow_ == 4) ? CD_HILITE2
+                                                               : CD_NORMAL);
+
+        unsigned char steps = mixer->GetChannelDelaySteps(i);
+        char dlyCode[4];
+        if (steps == 0) {
+            dlyCode[0] = '-';
+            dlyCode[1] = '-';
+            dlyCode[2] = ' ';
+            dlyCode[3] = '\0';
+        } else {
+            hex2char(steps, dlyCode);
+        }
+        DrawString(colX, pos._y, dlyCode, props);
+    }
+
+    // Row 5: Reverb (room size)
+    pos = anchor;
+    pos._y += 6;
+    if (mixerRow_ == 5) {
+        rowLabelProps.invert_ = true;
+        SetColor(CD_HILITE2);
+    } else {
+        rowLabelProps.invert_ = false;
+        SetColor(CD_NORMAL);
+    }
+    DrawString(pos._x - 5, pos._y, "REV", rowLabelProps);
+
+    for (int i = 0; i < MIXER_CHANNEL_COUNT; i++) {
+        int colX = anchor._x + i * dx + ((i == MASTER_CHANNEL_INDEX) ? masterSpacing : 0);
+        props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 5);
+        SetColor((i == viewData_->mixerCol_ && mixerRow_ == 5) ? CD_HILITE2
+                                                               : CD_NORMAL);
+
+        unsigned char size = mixer->GetChannelReverbSize(i);
+        char revCode[4];
+        if (size == 0) {
+            revCode[0] = '-';
+            revCode[1] = '-';
+            revCode[2] = ' ';
+            revCode[3] = '\0';
+        } else {
+            hex2char(size, revCode);
+        }
+        DrawString(colX, pos._y, revCode, props);
+    }
+
+    // Row 6: Tape effect (wow/flutter/saturation)
+    pos = anchor;
+    pos._y += 7;
+    if (mixerRow_ == 6) {
+        rowLabelProps.invert_ = true;
+        SetColor(CD_HILITE2);
+    } else {
+        rowLabelProps.invert_ = false;
+        SetColor(CD_NORMAL);
+    }
+    DrawString(pos._x - 5, pos._y, "TPE", rowLabelProps);
+
+    for (int i = 0; i < MIXER_CHANNEL_COUNT; i++) {
+        int colX = anchor._x + i * dx + ((i == MASTER_CHANNEL_INDEX) ? masterSpacing : 0);
+        props.invert_ = (i == viewData_->mixerCol_ && mixerRow_ == 6);
+        SetColor((i == viewData_->mixerCol_ && mixerRow_ == 6) ? CD_HILITE2
+                                                               : CD_NORMAL);
+
+        unsigned char tape = mixer->GetChannelTapeAmt(i);
+        char tapeCode[4];
+        if (tape == 0) {
+            tapeCode[0] = '-';
+            tapeCode[1] = '-';
+            tapeCode[2] = ' ';
+            tapeCode[3] = '\0';
+        } else {
+            hex2char(tape, tapeCode);
+        }
+        DrawString(colX, pos._y, tapeCode, props);
     }
 
     drawMap() ;
@@ -492,7 +755,6 @@ void MixerView::DrawView() {
     }
 
     // Draw VU bars at the end so they appear on top of everything
-    // They will always show the empty dashes and smoothly decay when paused
     DrawVuBars();
 };
 
@@ -513,7 +775,7 @@ void MixerView::OnPlayerUpdate(PlayerEventType, unsigned int tick) {
       pos._x=25 ;
     } else {
       pos=anchor ;
-      pos._x+=25 ;
+      pos._x+=28 ;
     }
 
     if (player->Clipped()) {
@@ -565,7 +827,7 @@ void MixerView::DrawVuBars() {
     Player *player = Player::GetInstance();
 
     GUIPoint vuPos = GetAnchor();
-    vuPos._y += 16; // Position below the row labels (bus, vol, hpf, lpf)
+    vuPos._y += 16; // Position below vol/hpf/lpf/dly rows
 
     GUITextProperties vuProps;
     vuProps.invert_ = true;
@@ -597,9 +859,13 @@ void MixerView::DrawVuBars() {
         }
         
         // Channel 8 (Master): Read post-volume peaks
-        uint32_t masterLevel = ms->GetMasterPeakLevel();
-        peakLevelsL[8] = (float)((masterLevel >> 16) & 0xFFFF) / 32767.0f;
-        peakLevelsR[8] = (float)(masterLevel & 0xFFFF) / 32767.0f;
+        if (player->IsChannelMuted(MASTER_CHANNEL_INDEX)) {
+            peakLevelsL[8] = peakLevelsR[8] = 0.0f;
+        } else {
+            uint32_t masterLevel = ms->GetMasterPeakLevel();
+            peakLevelsL[8] = (float)((masterLevel >> 16) & 0xFFFF) / 32767.0f;
+            peakLevelsR[8] = (float)(masterLevel & 0xFFFF) / 32767.0f;
+        }
     }
 
     // Update bar heights with slew rate decay for all 9 channels using utility

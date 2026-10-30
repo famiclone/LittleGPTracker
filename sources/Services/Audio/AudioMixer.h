@@ -44,5 +44,9 @@ private:
   bool clipped_;
   unsigned int peakMixerLevel_;
   unsigned int preMasterVolumePeakLevel_;
+  // Reused across callbacks — malloc/free every mix was fragmenting the heap
+  // during long play sessions (sample slices + synth).
+  fixed *mixBuffer_;
+  int mixBufferSize_;
 };
 #endif

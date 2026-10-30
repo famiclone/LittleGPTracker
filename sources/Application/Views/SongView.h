@@ -18,6 +18,8 @@ class SongView : public View {
     virtual void OnPlayerUpdate(PlayerEventType, unsigned int tick = 0);
     virtual void OnFocus();
 
+    void SetSongName(const char *name) { songname_ = name; }
+
   protected:
     void processNormalButtonMask(unsigned int mask);
     void processSelectionButtonMask(unsigned int mask);

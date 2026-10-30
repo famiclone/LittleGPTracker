@@ -5,6 +5,7 @@
 #include "Application/Utils/fixed.h"
 #include "Services/Midi/MidiService.h"
 #include "SyncMaster.h"
+#include "TablePlayback.h"
 #include "System/Console/Trace.h"
 #include "System/System/System.h"
 #include <math.h>
@@ -17,6 +18,7 @@ PlayerMixer::PlayerMixer() {
 		channel_[i] = new PlayerChannel(i);
 		isChannelPlaying_[i] = false;
     }
+    masterChannel_ = new PlayerChannel(MASTER_CHANNEL_INDEX);
 }
 
 bool PlayerMixer::Init(Project *project) {
@@ -28,6 +30,9 @@ bool PlayerMixer::Init(Project *project) {
 
 	AudioMixer *mixer=ms->GetMixBus(STREAM_MIX_BUS) ;
 	mixer->Insert(fileStreamer_) ;
+
+    masterChannel_->SetSourceModule(ms->GetBusMix());
+    masterChannel_->SetMixBusPtr(ms->GetMasterBus());
 
 	project_=project ;
 
@@ -46,6 +51,9 @@ void PlayerMixer::Close()  {
 	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 		channel_[i]->Reset() ;
 	}
+    if (masterChannel_) {
+        masterChannel_->Reset();
+    }
 
 
 	MixerService *ms=MixerService::GetInstance() ;
@@ -108,6 +116,62 @@ void PlayerMixer::Update(Observable &o,I_ObservableData *d) {
       channel_[i]->SetVolume(fl2fp(mixer->GetChannelVolume(i) / 255.0f));
       channel_[i]->SetHPFMode((unsigned char)mixer->GetChannelHPF(i));
       channel_[i]->SetLPFFreq(mixer->GetChannelLPF(i));
+
+      unsigned char dlySteps = mixer->GetChannelDelaySteps(i);
+      unsigned char dlyAmt = mixer->GetChannelDelayAmt(i);
+      unsigned char revSize = mixer->GetChannelReverbSize(i);
+      unsigned char revAmt = mixer->GetChannelReverbAmt(i);
+      unsigned char tapeAmt = mixer->GetChannelTapeAmt(i);
+
+      I_Instrument *activeInstr = channel_[i]->GetInstrument();
+      if (!activeInstr) {
+          activeInstr = lastInstrument_[i];
+      }
+      if (activeInstr) {
+          unsigned char instDel = activeInstr->GetDelaySend();
+          if (instDel > 0) {
+              if (dlySteps == 0) {
+                  dlySteps = 3;
+                  dlyAmt = instDel;
+              } else {
+                  int sum = (int)dlyAmt + (int)instDel;
+                  dlyAmt = (unsigned char)(sum > 255 ? 255 : sum);
+              }
+          }
+          unsigned char instRev = activeInstr->GetReverbSend();
+          if (instRev > 0) {
+              if (revSize == 0) {
+                  revSize = 6;
+                  revAmt = instRev;
+              } else {
+                  int sum = (int)revAmt + (int)instRev;
+                  revAmt = (unsigned char)(sum > 255 ? 255 : sum);
+              }
+          }
+          unsigned char instTape = activeInstr->GetTapeSend();
+          if (instTape > 0) {
+              int sum = (int)tapeAmt + (int)instTape;
+              tapeAmt = (unsigned char)(sum > 255 ? 255 : sum);
+          }
+      }
+
+      channel_[i]->SetDelay(dlySteps, dlyAmt);
+      channel_[i]->SetReverb(revSize, revAmt);
+      channel_[i]->SetTape(tapeAmt);
+  }
+  if (masterChannel_) {
+      masterChannel_->SetVolume(
+          fl2fp(mixer->GetChannelVolume(MASTER_CHANNEL_INDEX) / 255.0f));
+      masterChannel_->SetHPFMode(
+          (unsigned char)mixer->GetChannelHPF(MASTER_CHANNEL_INDEX));
+      masterChannel_->SetLPFFreq(mixer->GetChannelLPF(MASTER_CHANNEL_INDEX));
+      masterChannel_->SetDelay(
+          mixer->GetChannelDelaySteps(MASTER_CHANNEL_INDEX),
+          mixer->GetChannelDelayAmt(MASTER_CHANNEL_INDEX));
+      masterChannel_->SetReverb(
+          mixer->GetChannelReverbSize(MASTER_CHANNEL_INDEX),
+          mixer->GetChannelReverbAmt(MASTER_CHANNEL_INDEX));
+      masterChannel_->SetTape(mixer->GetChannelTapeAmt(MASTER_CHANNEL_INDEX));
   }
   MixerService *ms=MixerService::GetInstance();
   ms->SetPregain(project_->GetPregain());
@@ -129,6 +193,33 @@ void PlayerMixer::StopInstrument(int channel) {
     notes_[channel]=0xFF ;
 }
 
+void PlayerMixer::DetachInstrumentLocked(I_Instrument *instrument) {
+	if (!instrument) {
+		return;
+	}
+	for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+		if (channel_[i]->GetInstrument() == instrument) {
+			StopInstrument(i);
+		}
+		if (lastInstrument_[i] == instrument) {
+			lastInstrument_[i] = 0;
+		}
+		TablePlayback &tp = TablePlayback::GetTablePlayback(i);
+		if (tp.GetInstrument() == instrument) {
+			tp.Stop();
+		}
+	}
+}
+
+void PlayerMixer::DetachInstrument(I_Instrument *instrument) {
+	if (!instrument) {
+		return;
+	}
+	Lock();
+	DetachInstrumentLocked(instrument);
+	Unlock();
+}
+
 I_Instrument *PlayerMixer::GetInstrument(int channel) {
     return channel_[channel]->GetInstrument();
 }
@@ -139,11 +230,23 @@ int PlayerMixer::GetPlayedBufferPercentage() {
 };
 
 void PlayerMixer::SetChannelMute(int channel,bool mode) {
-     channel_[channel]->SetMute(mode) ;
+     if (channel == MASTER_CHANNEL_INDEX && masterChannel_) {
+         masterChannel_->SetMute(mode);
+         return;
+     }
+     if (channel >= 0 && channel < SONG_CHANNEL_COUNT) {
+         channel_[channel]->SetMute(mode) ;
+     }
 }
 
 bool PlayerMixer::IsChannelMuted(int channel) {
-     return channel_[channel]->IsMuted() ;
+     if (channel == MASTER_CHANNEL_INDEX && masterChannel_) {
+         return masterChannel_->IsMuted();
+     }
+     if (channel >= 0 && channel < SONG_CHANNEL_COUNT) {
+         return channel_[channel]->IsMuted() ;
+     }
+     return false;
 }
 
 void PlayerMixer::StartStreaming(const Path &path) {

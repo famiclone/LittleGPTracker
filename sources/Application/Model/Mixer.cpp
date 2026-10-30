@@ -1,4 +1,3 @@
-
 #include "Mixer.h"
 #include "Application/Utils/HexBuffers.h"
 
@@ -13,18 +12,30 @@ void Mixer::Clear() {
 
 	for (int i=0;i<SONG_CHANNEL_COUNT;i++) {
 		channelBus_[i]=i ;
+    }
+    for (int i = 0; i < MIXER_CHANNEL_COUNT; i++) {
         channelVolume_[i] = 0xFF;
         channelHPF_[i] = 0; // 0=OFF, 1=20Hz, 2=90Hz
         channelLPF_[i] = 0; // 0=OFF, else frequency in Hz (20-20000)
+        channelDelaySteps_[i] = 0; // 0=OFF, else delay in phrase steps
+        channelDelayAmt_[i] = 0x80; // wet + feedback
+        channelReverbSize_[i] = 0;  // 0=OFF, else room size 1-16
+        channelReverbAmt_[i] = 0x60; // wet mix
+        channelTapeAmt_[i] = 0;      // 0=OFF, else tape effect 0-255
     }
 } ;
 
 void Mixer::SaveContent(TiXmlNode *node) {
     saveHexBuffer(node, "BUS", (unsigned char *)channelBus_,
                   SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "VOL", channelVolume_, SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "HPF", channelHPF_, SONG_CHANNEL_COUNT);
-    saveHexBuffer(node, "LPF", channelLPF_, SONG_CHANNEL_COUNT);
+    saveHexBuffer(node, "VOL", channelVolume_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "HPF", channelHPF_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "LPF", channelLPF_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "DLYS", channelDelaySteps_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "DLYA", channelDelayAmt_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "REVS", channelReverbSize_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "REVA", channelReverbAmt_, MIXER_CHANNEL_COUNT);
+    saveHexBuffer(node, "TAPE", channelTapeAmt_, MIXER_CHANNEL_COUNT);
 } ;
 
 void Mixer::RestoreContent(TiXmlElement *element) {
@@ -39,6 +50,16 @@ void Mixer::RestoreContent(TiXmlElement *element) {
             restoreHexBuffer(current, channelHPF_);
         } else if (!strcmp("LPF", value)) {
             restoreHexBuffer(current, (unsigned char *)channelLPF_);
+        } else if (!strcmp("DLYS", value)) {
+            restoreHexBuffer(current, channelDelaySteps_);
+        } else if (!strcmp("DLYA", value)) {
+            restoreHexBuffer(current, channelDelayAmt_);
+        } else if (!strcmp("REVS", value)) {
+            restoreHexBuffer(current, channelReverbSize_);
+        } else if (!strcmp("REVA", value)) {
+            restoreHexBuffer(current, channelReverbAmt_);
+        } else if (!strcmp("TAPE", value)) {
+            restoreHexBuffer(current, channelTapeAmt_);
         }
         current = current->NextSiblingElement();
     }

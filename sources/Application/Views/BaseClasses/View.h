@@ -40,6 +40,8 @@ enum ViewType {
     VT_CHAIN,
     VT_PHRASE,
     VT_PROJECT,
+    VT_SETTINGS,    // Nested under Project; not a gearbox letter
+    VT_APPEARANCE,  // Nested under Settings; not a gearbox letter
     VT_INSTRUMENT,
     VT_TABLE,  // Table screen under phrase
     VT_TABLE2, // Table screen under instrument
@@ -105,7 +107,9 @@ class View : public Observable {
     virtual void DrawView() = 0;
     virtual void OnPlayerUpdate(PlayerEventType, unsigned int currentTick) = 0;
     virtual void OnFocus() = 0;
-    virtual void AnimationUpdate() {}
+    virtual void AnimationUpdate();
+    // Pixel overlay drawn after the char grid (e.g. vector waveforms).
+    virtual void DrawOverlay() {}
 
     void SetDirty(bool dirty);
 
@@ -123,6 +127,7 @@ class View : public Observable {
                             GUITextProperties &props);
 
     void DoModal(ModalView *view, ModalViewCallback cb = 0);
+    bool HasModal() const { return modalView_ != 0; }
 
     void EnableNotification();
     void SetNotification(const char *notification, int offset = 2);

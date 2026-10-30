@@ -31,6 +31,7 @@ public: // I_GUIWindowImp implementation
 
 	virtual void SetColor(GUIColor &) ;
 	virtual void ClearRect(GUIRect &) ;
+	virtual void DrawRect(GUIRect &) ;
 	virtual void DrawString(const char *string,GUIPoint &pos,GUITextProperties &);
 	virtual GUIRect GetRect() ;
 	virtual void Invalidate() ;

@@ -19,6 +19,9 @@ public:
 	void OnStart() ;
 	unsigned short GetNext() ;
 	unsigned short Clone(unsigned short i) ;
+	// Re-type a sample-range slot (0x00–0x7F) between Sample and Synth.
+	// Returns true if the slot object was replaced.
+	bool SetInstrumentType(int id, InstrumentType type) ;
 private:
 	I_Instrument *instrument_[MAX_INSTRUMENT_COUNT] ;
 } ;

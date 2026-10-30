@@ -984,24 +984,7 @@ void SongView::DrawView() {
         selRect.Normalize();
     }
 
-    // Draw title
-
-    SetColor(CD_NORMAL);
-
     Player *player = Player::GetInstance();
-
-    std::ostringstream os;
-
-    os << ((player->GetSequencerMode() == SM_SONG) ? "Song" : "Live");
-    os << ": ";
-
-    if (songname_.substr(0, 5) == "lgpt_") {
-        os << songname_.substr(5);
-    }
-
-    std::string buffer(os.str());
-
-    DrawString(pos._x, pos._y, buffer.c_str(), props);
 
     // Compute song grid location
 
@@ -1232,16 +1215,20 @@ void SongView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
         DrawString(pos._x, pos._y, strbuffer, props);
     }
 
-    if (eventType != PET_STOP) {
-        SetColor(CD_NORMAL);
-        props.invert_ = false;
-        int time = int(player->GetPlayTime());
-        int mi = time / 60;
-        int se = time - mi * 60;
-        sprintf(strbuffer, "%2.2d:%2.2d", mi, se);
-        pos._y += 1;
-        DrawString(pos._x, pos._y, strbuffer, props);
-    }
+    SetColor(CD_NORMAL);
+    props.invert_ = false;
+    int time = int(player->GetPlayTime());
+    int mi = time / 60;
+    int se = time - mi * 60;
+    sprintf(strbuffer, "%2.2d:%2.2d", mi, se);
+    pos._y += 1;
+    DrawString(pos._x, pos._y, strbuffer, props);
+
+    // BPM under the play timer
+    sprintf(strbuffer, "%3.3d", viewData_->project_->GetTempo());
+    pos._y += 1;
+    DrawString(pos._x, pos._y, strbuffer, props);
+
     drawNotes();
 };
 

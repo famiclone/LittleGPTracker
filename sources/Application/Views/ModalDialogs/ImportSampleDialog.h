@@ -16,18 +16,21 @@ public:
 	virtual void OnFocus() ;
 	virtual void ProcessButtonMask(unsigned short mask,bool pressed) ;
 
+	void onRecordFinished(ModalView &dialog) ;
+
 protected:
 	void setCurrentFolder(Path *path) ;
 	void warpToNextSample(int dir) ;
 	void import(Path &element) ;
 	void preview(Path &element) ;
 	void endPreview() ;
+	void openRecordDialog() ;
 private:
 	Path *getImportElement();
 	bool isSampleLibRoot();
 	void setCurrent(Path *element, unsigned short mask);
 	T_SimpleList<Path> sampleList_ ;
-	int currentSample_ ;
+    int currentSample_ ;
 	int topIndex_ ;
 	int toInstr_ ;
 	int selected_ ;

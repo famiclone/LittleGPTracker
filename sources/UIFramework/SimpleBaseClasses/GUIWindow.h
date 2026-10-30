@@ -34,6 +34,7 @@ public:	// I_GUIGraphics implementation
 
 	virtual void SetColor(GUIColor &) ;
 	virtual void ClearRect(GUIRect &) ;
+	virtual void DrawRect(GUIRect &) ;
 	virtual void DrawChar(const char c,GUIPoint &pos,GUITextProperties &);
 	virtual void DrawString(const char *string,GUIPoint &pos,GUITextProperties &props,bool overlay=false);
 	virtual GUIRect GetRect() ;
@@ -41,6 +42,8 @@ public:	// I_GUIGraphics implementation
 	virtual void Flush() ;
 	virtual void Lock() ;
 	virtual void Unlock() ;
+	virtual void BeginBatchDraw() ;
+	virtual void EndBatchDraw(GUIRect &dirty) ;
 	virtual void Update() ;
 	virtual void onUpdate()=0 ;
 //	virtual void Save() ;

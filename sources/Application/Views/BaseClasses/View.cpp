@@ -80,6 +80,10 @@ void View::drawMap() {
 		GUIPoint pos(View::margin_,anchor._y);
     	GUITextProperties props ;
 
+		Player *player = Player::GetInstance();
+		bool isLive = (player && player->GetSequencerMode() == SM_LIVE);
+		const char *songChar = isLive ? "L" : "S";
+
 		//draw entire map
 		SetColor(CD_HILITE1) ;
     	char buffer[5] ;
@@ -89,7 +93,7 @@ void View::drawMap() {
         DrawString(pos._x,pos._y,buffer,props) ;
 		pos._y++ ;		
 		//row2
-		sprintf(buffer,"SCPI");
+		sprintf(buffer, "%sCPI", songChar);
         DrawString(pos._x,pos._y,buffer,props) ;
 		pos._y++ ;		
 		//row3
@@ -112,6 +116,8 @@ void View::drawMap() {
 	        DrawString(pos._x,pos._y,"P",props) ;
 			break;
 		case VT_PROJECT:
+		case VT_SETTINGS:   // stays in Project's gearbox cell
+		case VT_APPEARANCE: // nested under Settings
 	        DrawString(pos._x,pos._y,"P",props) ;
 			break;
 		case VT_INSTRUMENT:
@@ -140,8 +146,8 @@ void View::drawMap() {
 			break;
 		default: //VT_SONG
 			pos._y+=1;
-	        DrawString(pos._x,pos._y,"S",props) ;
-			int foo=0;
+	        DrawString(pos._x,pos._y,songChar,props) ;
+			break;
 		}
 
 	}//!minilayout
@@ -191,16 +197,24 @@ void View::DoModal(ModalView *view,ModalViewCallback cb) {
 	modalView_->OnFocus() ;
 	modalViewCallback_=cb ;
 	isDirty_=true ;
+	// Invalidate the char-screen cache so the next Flush repaints every
+	// cell (otherwise unchanged spaces leave stale pixel overlays).
+	((AppWindow &)w_).Clear(true) ;
+	((AppWindow &)w_).SetDirty() ;
 } ;
 
-void View::Redraw() {
+void View::AnimationUpdate() {
+	// Keep modal UIs alive when the audio/player tick is paused (e.g. mic
+	// capture suspends SDL playback, so OnPlayerUpdate never fires).
 	if (modalView_) {
-		if (isDirty_) {
-			DrawView() ;
-		}
+		modalView_->AnimationUpdate();
+	}
+}
+
+void View::Redraw() {
+	DrawView() ;
+	if (modalView_) {
 		modalView_->Redraw() ;
-	} else {
-		DrawView() ;
 	}
 	isDirty_=false ;
 } ;
@@ -213,13 +227,20 @@ void View::ProcessButton(unsigned short mask, bool pressed) {
 	isDirty_=false ;
 	if (modalView_) {
 		modalView_->ProcessButton(mask,pressed);
-		modalView_->isDirty_;
+		if (modalView_->isDirty_) {
+			isDirty_=true ;
+		}
 		if (modalView_->IsFinished()) {
+			ModalView *finishedModal = modalView_ ;
+			ModalViewCallback cb = modalViewCallback_ ;
+			modalView_ = 0 ;
+			modalViewCallback_ = 0 ;
 			// process callback sending the modal dialog
-			if (modalViewCallback_) {
-				modalViewCallback_(*this,*modalView_) ;
+			if (cb) {
+				cb(*this,*finishedModal) ;
 			}
-			SAFE_DELETE(modalView_) ;
+			SAFE_DELETE(finishedModal) ;
+			((AppWindow &)w_).Clear(true) ;
 			isDirty_=true ;
 		}
 	} else {

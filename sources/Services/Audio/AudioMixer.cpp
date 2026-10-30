@@ -9,7 +9,9 @@ AudioMixer::AudioMixer(const char *name):
 	T_SimpleList<AudioModule>(false),
 	enableRendering_(0),
 	writer_(0),
-	name_(name)
+	name_(name),
+	mixBuffer_(0),
+	mixBufferSize_(0)
 {
 	volume_=(i2fp(1)) ;
     softclip_ = -1;
@@ -43,6 +45,8 @@ AudioMixer::AudioMixer(const char *name):
 } ;
 
 AudioMixer::~AudioMixer() {
+	SAFE_FREE(mixBuffer_);
+	mixBufferSize_ = 0;
 }
 
 void AudioMixer::SetFileRenderer(const char *path) {
@@ -69,7 +73,6 @@ void AudioMixer::EnableRendering(bool enable) {
 bool AudioMixer::Render(fixed *buffer,int samplecount) {
     clipped_ = false;
 
-    fixed *mixBuffer = 0;
     bool gotData = false;
     IteratorPtr<AudioModule> it(GetIterator());
     for (it->Begin(); !it->IsDone(); it->Next()) {
@@ -77,13 +80,16 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
         if (!gotData) {
             gotData=current.Render(buffer,samplecount) ;           
          } else {
-            if (!mixBuffer) {
-               mixBuffer=(fixed *)malloc(samplecount*2*sizeof(fixed)) ;
-            } 
-            if (current.Render(mixBuffer,samplecount)) {
+            int need = samplecount * 2;
+            if (mixBufferSize_ < need) {
+               SAFE_FREE(mixBuffer_);
+               mixBuffer_ = (fixed *)SYS_MALLOC(need * sizeof(fixed));
+               mixBufferSize_ = mixBuffer_ ? need : 0;
+            }
+            if (mixBuffer_ && current.Render(mixBuffer_, samplecount)) {
                fixed *dst=buffer ;
-               fixed *src=mixBuffer ;
-               int count=samplecount*2 ;
+               fixed *src=mixBuffer_ ;
+               int count=need ;
                while (count--) {
                  *dst+=*src ;
                  dst++ ;
@@ -160,7 +166,6 @@ bool AudioMixer::Render(fixed *buffer,int samplecount) {
 		} ;
 		writer_->AddBuffer(buffer,samplecount) ;
 	}
-     SAFE_FREE(mixBuffer) ;
      return gotData ;
 } ;
 

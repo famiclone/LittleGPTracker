@@ -11,7 +11,6 @@
 #include "BaseClasses/UIIntVarField.h"
 #include "BaseClasses/UIStaticField.h"
 #include "BaseClasses/UITempoField.h"
-#include "Services/Midi/MidiService.h"
 #include "System/System/System.h"
 
 #define ACTION_PURGE            MAKE_FOURCC('P','U','R','G')
@@ -21,6 +20,20 @@
 #define ACTION_QUIT             MAKE_FOURCC('Q','U','I','T')
 #define ACTION_PURGE_INSTRUMENT MAKE_FOURCC('P','R','G','I')
 #define ACTION_TEMPO_CHANGED    MAKE_FOURCC('T','E','M','P')
+#define ACTION_SETTINGS         MAKE_FOURCC('S','E','T','T')
+#define ACTION_NAME             MAKE_FOURCC('N','A','M','E')
+
+static void RenameProjectCallback(View &v, ModalView &dialog) {
+    NewProjectDialog &npd = (NewProjectDialog &)dialog;
+    if (dialog.GetReturnCode() > 0) {
+        std::string name = npd.GetName();
+        std::string dst = Path("root:").GetPath();
+        if (!dst.empty() && dst[dst.size() - 1] != '/')
+            dst += "/";
+        dst += name;
+        ((ProjectView &)v).OnRenameProject((char *)dst.c_str());
+    }
+}
 
 static void SaveAsProjectCallback(View &v,ModalView &dialog) {
 
@@ -104,11 +117,18 @@ ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
 
     lastClock_ = 0;
     lastTick_ = 0;
+    nameField_ = 0;
 
 	project_=data->project_ ;
 
 	GUIPoint position=GetAnchor() ;
-	
+
+    nameField_ = new UIActionField("Name: ", ACTION_NAME, position);
+    nameField_->AddObserver(*this);
+    T_SimpleList<UIField>::Insert(nameField_);
+    refreshNameField();
+
+	position._y += 2;
 	Variable *v=project_->FindVariable(VAR_TEMPO) ;
     UITempoField *f = new UITempoField(ACTION_TEMPO_CHANGED, position, *v,
                                        "Tempo: %d [%2.2x]  ", 60, 400, 1, 10);
@@ -180,19 +200,10 @@ ProjectView::ProjectView(GUIWindow &w,ViewData *data):FieldView(w,data) {
     a1->AddObserver(*this);
     T_SimpleList<UIField>::Insert(a1);
 
-    v = project_->FindVariable(VAR_MIDIDEVICE);
-    NAssert(v);
-    position._y += 2;
-    field = new UIIntVarField(position, *v, "MIDI: %s", 0,
-                              MidiService::GetInstance()->Size(), 1, 1);
-    T_SimpleList<UIField>::Insert(field);
-
-    position._y += 2;
-    v = project_->FindVariable(VAR_RENDER);
-    NAssert(v);
-    field = new UIIntVarField(position, *v, "Render: %s", 0,
-                              project_->MAX_RENDER_MODE - 1, 1, 2);
-    T_SimpleList<UIField>::Insert(field);
+    position._y += 1;
+    a1 = new UIActionField("Settings", ACTION_SETTINGS, position);
+    a1->AddObserver(*this);
+    T_SimpleList<UIField>::Insert(a1);
 
     position._y += 2;
     a1 = new UIActionField("Exit", ACTION_QUIT, position);
@@ -212,10 +223,15 @@ void ProjectView::ProcessButtonMask(unsigned short mask,bool pressed) {
     FieldView::ProcessButtonMask(mask);
 
     if (mask & EPBM_R) {
-        if (mask&EPBM_DOWN) {
-			ViewType vt=VT_SONG;
-			ViewEvent ve(VET_SWITCH_VIEW,&vt) ;
-			SetChanged();
+        if (mask & EPBM_DOWN) {
+            ViewType vt = VT_SONG;
+            ViewEvent ve(VET_SWITCH_VIEW, &vt);
+            SetChanged();
+            NotifyObservers(&ve);
+        } else if (mask & EPBM_RIGHT) {
+            ViewType vt = VT_SETTINGS;
+            ViewEvent ve(VET_SWITCH_VIEW, &vt);
+            SetChanged();
             NotifyObservers(&ve);
         }
     } else {
@@ -252,23 +268,30 @@ void ProjectView::DrawView() {
     SetColor(CD_NORMAL);
     DrawString(pos._x,pos._y,projectString,props) ;
 
+    refreshNameField();
     FieldView::Redraw();
     drawMap();
-
-    int currentMode = project_->GetRenderMode();
-    if ((viewData_->renderMode_ != currentMode) && !MixerService::GetInstance()->IsRendering()) {
-        // Mode changed
-        if (currentMode > 0 && viewData_->renderMode_ == 0) {
-            View::SetNotification("Rendering on, press start");
-        } else if (currentMode == 0 && viewData_->renderMode_ > 0) {
-            View::SetNotification("Rendering off");
-        }
-        viewData_->renderMode_ = currentMode;
-        MixerService::GetInstance()->SetRenderMode(currentMode);
-    }
-
     View::EnableNotification();
 } ;
+
+std::string ProjectView::currentShortName() {
+    std::string full = Path("project:").GetPath();
+    while (!full.empty() &&
+           (full[full.size() - 1] == '/' || full[full.size() - 1] == '\\'))
+        full.erase(full.size() - 1);
+    std::string folder = Path(full).GetName();
+    if (folder.size() > 5 && folder.compare(0, 5, "lgpt_") == 0)
+        return folder.substr(5);
+    return folder;
+}
+
+void ProjectView::refreshNameField() {
+    if (!nameField_)
+        return;
+    std::string label = "Name: ";
+    label += currentShortName();
+    nameField_->SetName(label.c_str());
+}
 
 void ProjectView::Update(Observable &,I_ObservableData *data) {
 
@@ -328,6 +351,20 @@ void ProjectView::Update(Observable &,I_ObservableData *data) {
             DoModal(mb, QuitCallback);
             break;
         }
+        case ACTION_SETTINGS: {
+            ViewType vt = VT_SETTINGS;
+            ViewEvent ve(VET_SWITCH_VIEW, &vt);
+            SetChanged();
+            NotifyObservers(&ve);
+            break;
+        }
+        case ACTION_NAME: {
+            std::string shortName = currentShortName();
+            NewProjectDialog *dlg =
+                new NewProjectDialog(*this, "root:", shortName.c_str());
+            DoModal(dlg, RenameProjectCallback);
+            break;
+        }
         case ACTION_TEMPO_CHANGED:
 			break ;
 		default:
@@ -353,6 +390,36 @@ void ProjectView::OnSaveAsProject(char * data) {
 	SetChanged();
 	NotifyObservers(&ve) ;
 } ;
+
+void ProjectView::OnRenameProject(char *data) {
+    Path oldPath("project:");
+    Path newPath(data);
+    std::string oldResolved = oldPath.GetPath();
+    // Trim trailing slash for comparison
+    while (!oldResolved.empty() && oldResolved[oldResolved.size() - 1] == '/')
+        oldResolved.erase(oldResolved.size() - 1);
+    std::string newResolved = newPath.GetPath();
+    while (!newResolved.empty() && newResolved[newResolved.size() - 1] == '/')
+        newResolved.erase(newResolved.size() - 1);
+
+    if (oldResolved == newResolved) {
+        refreshNameField();
+        isDirty_ = true;
+        return;
+    }
+
+    FileSystemService FSS;
+    if (FSS.Rename(Path(oldResolved), Path(newResolved)) < 0) {
+        View::SetNotification("Rename failed");
+        return;
+    }
+
+    ViewEvent ve(VET_RENAME_PROJECT, data);
+    SetChanged();
+    NotifyObservers(&ve);
+    refreshNameField();
+    isDirty_ = true;
+}
 
 void ProjectView::OnQuit() {
 	ViewEvent ve(VET_QUIT_APP) ;

@@ -1,10 +1,12 @@
-
 #include "SDLEventManager.h"
 #include "Application/Application.h"
 #include "Application/Model/Config.h"
 #include "System/Console/Trace.h"
 #include "UIFramework/BasicDatas/GUIEvent.h"
 #include "SDLGUIWindowImp.h"
+#ifdef PLATFORM_TG5040
+#include "Adapters/LINUX/System/LinuxPowerSleep.h"
+#endif
 bool SDLEventManager::finished_=false ;
 bool SDLEventManager::dumpEvent_=false ;
 
@@ -14,6 +16,77 @@ SDLEventManager::SDLEventManager()
 
 SDLEventManager::~SDLEventManager() 
 {
+}
+
+void SDLEventManager::EnsureJoyControllers(int slot) {
+	if (slot < 0 || slot >= MAX_JOY_COUNT) {
+		return;
+	}
+	char sourceName[128];
+	if (!buttonCS_[slot]) {
+		sprintf(sourceName, "buttonJoy%d", slot);
+		buttonCS_[slot] = new ButtonControllerSource(sourceName);
+	}
+	if (!joystickCS_[slot]) {
+		sprintf(sourceName, "axisJoy%d", slot);
+		joystickCS_[slot] = new JoystickControllerSource(sourceName);
+	}
+	if (!hatCS_[slot]) {
+		sprintf(sourceName, "hatJoy%d", slot);
+		hatCS_[slot] = new HatControllerSource(sourceName);
+	}
+}
+
+int SDLEventManager::FindJoySlot(SDL_JoystickID instanceId) const {
+	for (int i = 0; i < MAX_JOY_COUNT; i++) {
+		if (joystick_[i] &&
+		    SDL_JoystickInstanceID(joystick_[i]) == instanceId) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void SDLEventManager::OnWakeFromSleep() {
+	Trace::Log("EVENT", "wake from sleep: reinit input");
+	for (int i = 0; i < MAX_JOY_COUNT; i++) {
+		if (!joystick_[i]) {
+			continue;
+		}
+		if (SDL_JoystickGetAttached(joystick_[i])) {
+			continue;
+		}
+		Trace::Log("EVENT", "joystick slot %d detached, closing", i);
+		SDL_JoystickClose(joystick_[i]);
+		joystick_[i] = 0;
+	}
+
+	// Prefer reopening by device index into free/detached slots. Instance
+	// IDs change across close/open, so event handlers use FindJoySlot.
+	int joyCount = SDL_NumJoysticks();
+	joyCount = (joyCount > MAX_JOY_COUNT) ? MAX_JOY_COUNT : joyCount;
+	for (int i = 0; i < joyCount; i++) {
+		if (joystick_[i] && SDL_JoystickGetAttached(joystick_[i])) {
+			continue;
+		}
+		if (joystick_[i]) {
+			SDL_JoystickClose(joystick_[i]);
+			joystick_[i] = 0;
+		}
+		joystick_[i] = SDL_JoystickOpen(i);
+		EnsureJoyControllers(i);
+		Trace::Log("EVENT", "joystick[%d]=%x (id=%d)", i, joystick_[i],
+		           joystick_[i] ? SDL_JoystickInstanceID(joystick_[i]) : -1);
+	}
+
+	GUIWindow *appWindow = Application::GetInstance()->GetWindow();
+	if (appWindow) {
+		SDLGUIWindowImp *sdlWindow =
+		    (SDLGUIWindowImp *)appWindow->GetImpWindow();
+		if (sdlWindow) {
+			sdlWindow->Invalidate();
+		}
+	}
 }
 
 bool SDLEventManager::Init() 
@@ -46,22 +119,17 @@ bool SDLEventManager::Init()
 		joystick_[i]=0 ;
 		buttonCS_[i]=0 ;
 		joystickCS_[i]=0 ;
+		hatCS_[i]=0 ;
 	}
     
 	for (int i=0;i<joyCount;i++) 
   {
-		char sourceName[128] ;
 		joystick_[i]=SDL_JoystickOpen(i) ;
     Trace::Log("EVENT","joystick[%d]=%x",i,joystick_[i]) ;
 		Trace::Log("EVENT","Number of axis:%d",SDL_JoystickNumAxes(joystick_[i])) ;
 		Trace::Log("EVENT","Number of buttons:%d",SDL_JoystickNumButtons(joystick_[i])) ;
 		Trace::Log("EVENT","Number of hats:%d",SDL_JoystickNumHats(joystick_[i])) ;
-		sprintf(sourceName,"buttonJoy%d",i) ;
-		buttonCS_[i]=new ButtonControllerSource(sourceName) ;
-		sprintf(sourceName,"axisJoy%d",i) ;
-		joystickCS_[i]=new JoystickControllerSource(sourceName) ;
-		sprintf(sourceName,"hatJoy%d",i) ;
-		hatCS_[i]=new HatControllerSource(sourceName) ;
+		EnsureJoyControllers(i);
 	}
   
 	return true ;
@@ -95,21 +163,34 @@ int SDLEventManager::MainLoop()
 
 
 				case SDL_JOYBUTTONDOWN:
-					buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,true) ;
-					break ;
-				case SDL_JOYBUTTONUP:
-					if (dumpEvent_) {
-						Trace::Log("EVENT","but(%d):%d",event.button.which,event.jbutton.button) ;
+				case SDL_JOYBUTTONUP: {
+					int slot = FindJoySlot(event.jbutton.which);
+					if (slot < 0 || !buttonCS_[slot]) {
+						break;
 					}
-					buttonCS_[event.jbutton.which]->SetButton(event.jbutton.button,false) ;
-					break ;
-				case SDL_JOYAXISMOTION:
-					if (dumpEvent_) {
-						Trace::Log("EVENT","joy(%d)::%d=%d",event.jaxis.which,event.jaxis.axis,event.jaxis.value) ;
+					if (dumpEvent_ && event.type == SDL_JOYBUTTONUP) {
+						Trace::Log("EVENT","but(%d):%d",slot,event.jbutton.button) ;
 					}
-					joystickCS_[event.jaxis.which]->SetAxis(event.jaxis.axis,float(event.jaxis.value)/32767.0f) ;
-					break ;
-				case SDL_JOYHATMOTION:
+					buttonCS_[slot]->SetButton(event.jbutton.button,
+					                           event.type == SDL_JOYBUTTONDOWN);
+					break;
+				}
+				case SDL_JOYAXISMOTION: {
+					int slot = FindJoySlot(event.jaxis.which);
+					if (slot < 0 || !joystickCS_[slot]) {
+						break;
+					}
+					if (dumpEvent_) {
+						Trace::Log("EVENT","joy(%d)::%d=%d",slot,event.jaxis.axis,event.jaxis.value) ;
+					}
+					joystickCS_[slot]->SetAxis(event.jaxis.axis,float(event.jaxis.value)/32767.0f) ;
+					break;
+				}
+				case SDL_JOYHATMOTION: {
+					int slot = FindJoySlot(event.jhat.which);
+					if (slot < 0 || !hatCS_[slot]) {
+						break;
+					}
 					if (dumpEvent_)
           {
 						for (int i=0;i<4;i++)
@@ -117,18 +198,25 @@ int SDLEventManager::MainLoop()
 							int mask = 1<<i ;
 							if (event.jhat.value&mask)
               {
-								Trace::Log("EVENT","hat(%d)::%d::%d",event.jhat.which,event.jhat.hat,i) ;
+								Trace::Log("EVENT","hat(%d)::%d::%d",slot,event.jhat.hat,i) ;
 							}
 						}
 					}
-					hatCS_[event.jhat.which]->SetHat(event.jhat.hat,event.jhat.value) ;
-					break ;
+					hatCS_[slot]->SetHat(event.jhat.hat,event.jhat.value) ;
+					break;
+				}
 				case SDL_JOYBALLMOTION:
 					if (dumpEvent_)
           {
 						Trace::Log("EVENT","ball(%d)::%d=(%d,%d)",event.jball.which,event.jball.ball,event.jball.xrel,event.jball.yrel) ;
 					}
 					break ;
+#ifdef PLATFORM_TG5040
+				case SDL_JOYDEVICEREMOVED:
+				case SDL_JOYDEVICEADDED:
+					OnWakeFromSleep();
+					break;
+#endif
 		}
 
 			switch (event.type) 
@@ -148,6 +236,12 @@ int SDLEventManager::MainLoop()
                     }
 					break ;
 				case SDL_USEREVENT:
+#ifdef PLATFORM_TG5040
+					if (event.user.code == LGPT_SDL_USER_WAKE) {
+						OnWakeFromSleep();
+						break;
+					}
+#endif
 					sdlWindow->ProcessUserEvent(event) ;
 					break ;
 			}

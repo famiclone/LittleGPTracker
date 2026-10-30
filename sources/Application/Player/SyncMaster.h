@@ -19,6 +19,7 @@ public:
 	bool MidiSlice() ;
 	float GetPlaySampleCount() ;
 	float GetTickSampleCount() ;
+	float GetStepSampleCount() ;
 	int GetTableRatio() ;
 	void SetTableRatio(int ratio) ;
 	unsigned int GetBeatCount() ;

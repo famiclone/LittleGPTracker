@@ -28,6 +28,10 @@ public:
 
 	void StartInstrument(int channel,I_Instrument *instrument,unsigned char note,bool newInstrument) ;
 	void StopInstrument(int channel) ;
+	// Drop any channel / lastInstrument_ / table refs to this object before delete.
+	void DetachInstrument(I_Instrument *instrument) ;
+	// Same as DetachInstrument but caller already holds MixerService lock.
+	void DetachInstrumentLocked(I_Instrument *instrument) ;
 
 	int GetChannelNote(int Channel) ;
 
@@ -69,6 +73,7 @@ private:
 
 	AudioFileStreamer fileStreamer_ ;
 	PlayerChannel *channel_[SONG_CHANNEL_COUNT] ;
+    PlayerChannel *masterChannel_;
 
 	// store trigger notes, 0xFF = none
 	

@@ -1,0 +1,42 @@
+<CONFIG>
+	<!-- User data (projects, samplelib, renders) lives OUTSIDE the pak so that
+	     a Pak Store update, which wipes and re-unzips the pak folder, cannot
+	     take your songs with it. "root:" resolves here. -->
+	<ROOTFOLDER value="/mnt/SDCARD/LGPT"/>
+
+	<AUTO_LOAD_LAST value="YES"/>
+
+	<!-- ==== Screen layout ====================================================
+	     The UI is a character grid of APPWIDTH/8 x APPHEIGHT/8 cells, scaled up
+	     by SCREENMULT. The Brick's panel is 1024x768.
+
+	     DEFAULT (below): 320x240 grid = 40x30 chars at 3x -> 960x720, centred
+	     with a small border. Big, readable text; 22 song rows at a time.
+
+	     DENSE alternative (TrimUI BRICK ONLY - see warning): swap in the three
+	     values below for a 512x384 grid = 64x48 chars at 2x -> exactly
+	     1024x768, no border, 40 song rows at a time. Twice the song visible,
+	     but the text is noticeably smaller on a 3.2" screen.
+
+	     WARNING: dense mode needs a 1024x768 panel, i.e. the Brick or Brick
+	     Pro ONLY. On a 720-tall device (Smart Pro, tg5050) it wants a 768-tall
+	     surface, the vertical anchor goes negative, and the top and bottom
+	     rows are silently dropped. The 3x default below is correct
+	     everywhere: 960x720 on a Brick, and exactly full height at 1280x720.
+
+	         <APPWIDTH value="512"/>
+	         <APPHEIGHT value="384"/>
+	         <SCREENMULT value="2"/>
+
+	     APPWIDTH/APPHEIGHT must be multiples of 8. Leaving them out keeps the
+	     classic 320x240. -->
+	<SCREENMULT value="3"/>
+
+	<!-- ALSA dmix on tg5040 is unhappy with very small periods; 1024 is a
+	     safe starting point. Drop to 512 for tighter timing if it holds. -->
+	<AUDIOBUFFERSIZE value="1024"/>
+
+	<KEYDELAY value="200"/>
+	<KEYREPEAT value="100"/>
+	<FONTTYPE value="0"/>
+</CONFIG>

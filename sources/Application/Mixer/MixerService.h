@@ -39,6 +39,8 @@ public:
 	void Stop() ;
 
     MixBus *GetMixBus(int i);
+    MixBus *GetMasterBus() { return &master_; }
+    MixBus *GetBusMix() { return &busMix_; }
     unsigned int GetMasterPeakLevel() const;
 
     virtual void Update(Observable &o, I_ObservableData *d);
@@ -67,6 +69,7 @@ private:
   void initRendering(MixerServiceRenderMode);
   AudioOut *out_;
   MixBus master_;
+  MixBus busMix_;
   MixBus bus_[MAX_BUS_COUNT];
   MixerServiceRenderMode mode_;
   SDL_mutex *sync_;

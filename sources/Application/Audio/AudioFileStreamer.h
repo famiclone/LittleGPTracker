@@ -20,10 +20,14 @@ public:
 protected:
 	AudioFileStreamerMode mode_ ;
 	Path path_ ;
-	bool newPath_ ;
 	WavFile *wav_ ;
-	int position_ ;
+	// Fractional read head in source frames (supports rate conversion).
+	float position_ ;
+	float step_ ; // src frames advanced per output frame
 	int shift_ ;
+	int channelCount_ ;
+	int size_ ; // source frames
+	short *pcm_ ; // borrowed from wav_ while playing; not owned
 } ;
 
-#endif 
+#endif

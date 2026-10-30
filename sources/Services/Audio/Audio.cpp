@@ -18,6 +18,12 @@ Audio::Audio(AudioSettings &hints) : T_SimpleList<AudioOut>(true), settings_() {
     settings_.preBufferCount_ = v ? atoi(v) : hints.preBufferCount_;
     v = config->GetValue("AUDIOSAMPLERATE");
     settings_.sampleRate_ = v ? atoi(v) : hints.sampleRate_;
+    if (settings_.sampleRate_ < 8000 || settings_.sampleRate_ > 192000) {
+        settings_.sampleRate_ = 44100;
+    }
+    if (settings_.bufferSize_ <= 0) {
+        settings_.bufferSize_ = hints.bufferSize_ > 0 ? hints.bufferSize_ : 256;
+    }
 
     Trace::Log("AUDIO", "Audio object initialised with");
     Trace::Log("AUDIO", "Api:%s", settings_.audioAPI_.c_str());

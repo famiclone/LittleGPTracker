@@ -8,6 +8,7 @@
 #include "Application/Commands/NodeList.h"
 #include "Application/Controllers/ControlRoom.h"
 #include "Application/Model/Config.h"
+#include "LinuxPowerSleep.h"
 #include "System/Console/Logger.h"
 #include <libgen.h>
 #include <sys/time.h>
@@ -135,9 +136,11 @@ void LINUXSystem::Boot(int argc, char **argv) {
 
     eventManager_ = I_GUIWindowFactory::GetInstance()->GetEventManager();
     eventManager_->Init();
+
+    LinuxPowerSleep::Start();
 };
 
-void LINUXSystem::Shutdown() {};
+void LINUXSystem::Shutdown() { LinuxPowerSleep::Stop(); };
 
 /*
  * get current time for status display

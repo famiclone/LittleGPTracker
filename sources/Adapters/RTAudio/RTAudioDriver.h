@@ -34,11 +34,18 @@ public:
 	virtual void StopDriver();
 	virtual int GetPlayedBufferPercentage()  ;
 	virtual double GetStreamTime() ;
-  virtual int GetSampleRate() { return 44100; } ;	
+  virtual int GetSampleRate() {
+      return settings_.sampleRate_ >= 8000 ? settings_.sampleRate_ : 44100;
+  } ;
   virtual bool Interlaced() { return true ; } ;
 	void fillBuffer(short *buffer,int frameCount) ;
 
 private:
+	bool deviceSupportsSampleRate(const RtAudio::DeviceInfo &info,
+	                              unsigned int sampleRate);
+	bool tryOpenDevice(unsigned int deviceID, unsigned int sampleRate,
+	                   unsigned int &bufferFrames);
+
 	RtAudio audio_ ;
   int fragSize_ ;
   char *unalignedMain_ ;

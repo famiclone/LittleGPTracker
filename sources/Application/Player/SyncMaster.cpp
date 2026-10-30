@@ -63,6 +63,11 @@ float SyncMaster::GetTickSampleCount() {
 	return tickSampleCount_ ;
 } ;
 
+// Samples per song/phrase step (one MajorSlice cycle)
+float SyncMaster::GetStepSampleCount() {
+	return playSampleCount_ * float(AUDIO_SLICES_PER_STEP);
+} ;
+
 //xx samples per tick
 //xx/driverRate seconds
 //xx/driverRate*1000 msecs

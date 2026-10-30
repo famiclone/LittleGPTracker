@@ -3,6 +3,8 @@
 #include "Application/Instruments/SampleInstrument.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Instruments/MidiInstrument.h"
+#include "Application/Instruments/SynthInstrument.h"
+#include "Application/Player/PlayerMixer.h"
 #include "System/io/Status.h"
 #include "Application/Utils/char.h"
 #include "Application/Model/Config.h"
@@ -11,7 +13,8 @@
 
 char *InstrumentTypeData[IT_LAST]= {
 	"Sample",
-	"Midi"
+	"Midi",
+	"Synth"
 } ;
 
 
@@ -68,6 +71,9 @@ void InstrumentBank::SaveContent(TiXmlNode *node) {
 			hex2char(i,hex) ;
 			data.SetAttribute("ID",hex) ;
 			data.SetAttribute("TYPE",InstrumentTypeData[instr->GetType()]) ;
+			if (instr->GetUserName()[0] != '\0') {
+				data.SetAttribute("NAME", instr->GetUserName());
+			}
 
 			IteratorPtr<Variable> it(instr->GetIterator()) ;
 			int count=0 ;
@@ -124,6 +130,11 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 			if (id<MAX_INSTRUMENT_COUNT) {
         I_Instrument *instr=instrument_[id] ;
 				if (instr->GetType()!=it) {
+					PlayerMixer *mixer = PlayerMixer::GetInstance();
+					if (mixer) {
+						mixer->Lock();
+						mixer->DetachInstrumentLocked(instr);
+					}
 					delete instr ;
 					switch (it) {
 						case IT_SAMPLE:
@@ -132,9 +143,23 @@ void InstrumentBank::RestoreContent(TiXmlElement *element) {
 						case IT_MIDI:
 							instr=new MidiInstrument() ;
 							break ;
+						case IT_SYNTH:
+							instr=new SynthInstrument() ;
+							break ;
+						case IT_LAST:
+							instr=new SampleInstrument() ;
+							break ;
 					}
 					instrument_[id]=instr ;
+					if (mixer) {
+						mixer->Unlock();
+					}
 				} ;
+
+				const char *instname = current->Attribute("NAME");
+				if (instname) {
+					instr->SetUserName(instname);
+				}
 
         TiXmlElement *param=current->FirstChildElement() ;
 				while (param) {
@@ -191,6 +216,9 @@ void InstrumentBank::Init() {
 
 unsigned short InstrumentBank::GetNext() {
 	for (int i=0;i<MAX_SAMPLEINSTRUMENT_COUNT;i++) {
+		if (instrument_[i]->GetType()!=IT_SAMPLE) {
+			continue ;
+		}
 		SampleInstrument *si=(SampleInstrument *)instrument_[i] ;
 		Variable *sample=si->FindVariable(SIP_SAMPLE) ;
 		if (sample) {
@@ -203,7 +231,7 @@ unsigned short InstrumentBank::GetNext() {
 } ;
 
 unsigned short InstrumentBank::Clone(unsigned short i) {
-	// can't clone midi instruments
+	// can't clone midi instruments into sample slots via GetNext
 
 	unsigned short next=GetNext() ;
 	if (next==NO_MORE_INSTRUMENT) 
@@ -219,14 +247,29 @@ unsigned short InstrumentBank::Clone(unsigned short i) {
 		return NO_MORE_INSTRUMENT ;
 	}
 
+	PlayerMixer *mixer = PlayerMixer::GetInstance();
+	if (mixer) {
+		mixer->DetachInstrument(dst);
+	}
 	delete dst ;
   
-	if (src->GetType()==IT_SAMPLE) {
-		dst=new SampleInstrument() ;
-	} else {
-		dst=new MidiInstrument() ;
+	switch (src->GetType()) {
+		case IT_SAMPLE:
+			dst=new SampleInstrument() ;
+			break ;
+		case IT_SYNTH:
+			dst=new SynthInstrument() ;
+			break ;
+		case IT_MIDI:
+			dst=new MidiInstrument() ;
+			break ;
+		case IT_LAST:
+		default:
+			dst=new SampleInstrument() ;
+			break ;
 	}
 	instrument_[next]=dst ;
+	dst->SetUserName(src->GetUserName());
 	IteratorPtr<Variable> it(src->GetIterator()) ;
 	for (it->Begin();!it->IsDone();it->Next()) {
 		Variable &srcV=it->CurrentItem() ;
@@ -237,6 +280,39 @@ unsigned short InstrumentBank::Clone(unsigned short i) {
 	}
 	return next ;
 
+}
+
+bool InstrumentBank::SetInstrumentType(int id, InstrumentType type) {
+	if (id < 0 || id >= MAX_SAMPLEINSTRUMENT_COUNT) {
+		return false ;
+	}
+	if (type != IT_SAMPLE && type != IT_SYNTH) {
+		return false ;
+	}
+	I_Instrument *instr = instrument_[id] ;
+	if (instr->GetType() == type) {
+		return false ;
+	}
+	// Hold the audio lock across detach + delete + bank swap so the player
+	// cannot StartInstrument/Render the dying object between Unlock and delete
+	// (common when switching synth→sample while the song is running).
+	PlayerMixer *mixer = PlayerMixer::GetInstance();
+	if (mixer) {
+		mixer->Lock();
+		mixer->DetachInstrumentLocked(instr);
+	}
+	delete instr ;
+	if (type == IT_SYNTH) {
+		instr = new SynthInstrument() ;
+	} else {
+		instr = new SampleInstrument() ;
+	}
+	instr->Init() ;
+	instrument_[id] = instr ;
+	if (mixer) {
+		mixer->Unlock();
+	}
+	return true ;
 }
 
 void InstrumentBank::OnStart() {

@@ -6,7 +6,10 @@
 
 PLATFORM:=  RASPI
 FONT := original.bmp
-include $(PWD)/Makefile.$(PLATFORM)
+# After `make -C buildXXX`, PWD/CURDIR become the build dir. Export the
+# projects/ path on the first pass so Makefile.$(PLATFORM) still resolves.
+export PROJECTDIR ?= $(CURDIR)
+include $(PROJECTDIR)/Makefile.$(PLATFORM)
 
 #---------------------------------------------------------------------------------
 # options for FXE
@@ -108,10 +111,17 @@ BEAGLEBOARDDIRS := $(LINUXDIRS) $(DUMMYMIDIDIRS) $(RTAUDIODIRS) $(SDLDIRS)
 DEBDIRS := $(DBDIRS) $(JACKDIRS) $(RTAUDIODIRS) $(RTMIDIDIRS) $(SDLDIRS)
 RASPIDIRS := $(DBDIRS) $(RTAUDIODIRS) $(RTMIDIDIRS) $(SDLDIRS)
 RG35XXPLUSDIRS := $(LINUXDIRS) $(DUMMYMIDIDIRS) $(SDL2DIRS) $(SDL2AUDIODIRS)
+TG5040DIRS := $(LINUXDIRS) $(DUMMYMIDIDIRS) $(SDL2DIRS) $(SDL2AUDIODIRS)
 STEAMDIRS := $(LINUXDIRS) $(JACKDIRS) $(RTAUDIODIRS) $(RTMIDIDIRS) $(SDLDIRS)
 X64DIRS := $(LINUXDIRS) $(RTMIDIDIRS) $(SDL2DIRS) $(SDL2AUDIODIRS)
 X86DIRS := $(LINUXDIRS) $(RTMIDIDIRS) $(SDL2DIRS) $(SDL2AUDIODIRS)
-MACOSDIRS := $(LINUXDIRS) $(RTAUDIODIRS) $(RTMIDIDIRS) $(SDL2DIRS)
+MACOSBASEDIRS := \
+	../sources/Adapters/MacOS/MacOSMain \
+	../sources/Adapters/MacOS/MacOSSystem \
+	../sources/Adapters/Unix/FileSystem \
+	../sources/Adapters/Unix/Process \
+	../sources/System/Process
+MACOSDIRS := $(MACOSBASEDIRS) $(RTAUDIODIRS) $(RTMIDIDIRS) $(SDL2DIRS)
 
 #---------------------------------------------------------------------------------
 # Consoles/Embedded
@@ -248,8 +258,11 @@ COMMONFILES := \
 	Application.o AppWindow.o SelectProjectDialog.o \
 	NewProjectDialog.o \
 	ImportSampleDialog.o \
+	RecordSampleDialog.o \
+	SDLAudioCapture.o \
 	MixerView.o NullView.o \
-	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o InstrumentView.o UIController.o \
+	SongView.o ChainView.o PhraseView.o ViewData.o ConsoleView.o ProjectView.o SettingsView.o AppearanceView.o InstrumentView.o UIController.o \
+	SelectSchemeDialog.o ColorScheme.o \
 	View.o ModalView.o FieldView.o UIField.o UIIntField.o \
 	UIIntVarOffField.o UIIntVarField.o ViewEvent.o I_Action.o\
 	UITempoField.o UIActionField.o \
@@ -260,7 +273,7 @@ COMMONFILES := \
 	char.o n_assert.o fixed.o wildcard.o \
 	SyncMaster.o TablePlayback.o Player.o \
 	Table.o TableView.o\
-	InstrumentBank.o WavFileWriter.o WavFile.o MidiInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
+	InstrumentBank.o WavFileWriter.o WavFile.o MidiInstrument.o SynthInstrument.o Filters.o SampleVariable.o SampleInstrument.o SamplePool.o CommandList.o FxPrinter.o\
 	PersistencyService.o Persistent.o \
 	Observable.o SingletonRegistry.o \
 	Audio.o AudioMixer.o AudioOutDriver.o AudioDriver.o \
@@ -283,6 +296,7 @@ LINUXFILES := \
 	UnixFileSystem.o \
 	LINUXMain.o \
 	LINUXSystem.o \
+	LinuxPowerSleep.o \
 	GUIFactory.o \
 	SDLGUIWindowImp.o \
 	SDLEventManager.o \
@@ -328,10 +342,21 @@ DEBFILES := $(DBFILES) $(RTAUDIOFILES) $(RTMIDIFILES) $(JACKFILES)
 BEAGLEBOARDFILES := $(LINUXFILES) $(DUMMYMIDIFILES)
 RASPIFILES := $(DBFILES) $(RTAUDIOFILES) $(RTMIDIFILES)
 RG35XXPLUSFILES := $(LINUXFILES) $(SDLAUDIOFILES) $(DUMMYMIDIFILES)
+TG5040FILES := $(LINUXFILES) $(SDLAUDIOFILES) $(DUMMYMIDIFILES)
 STEAMFILES := $(LINUXFILES) $(RTAUDIOFILES) $(RTMIDIFILES) $(JACKFILES)
 X64FILES := $(LINUXFILES) $(RTMIDIFILES) $(SDLAUDIOFILES)
 X86FILES := $(LINUXFILES) $(RTMIDIFILES) $(SDLAUDIOFILES)
-MACOSFILES := $(LINUXFILES) $(RTAUDIOFILES) $(RTMIDIFILES)
+MACOSBASEFILES := \
+	UnixFileSystem.o \
+	MacOSmain.o \
+	MacOSSystem.o \
+	GUIFactory.o \
+	SDLGUIWindowImp.o \
+	SDLEventManager.o \
+	Process.o \
+	UnixProcess.o \
+	SDLTimer.o
+MACOSFILES := $(MACOSBASEFILES) $(RTAUDIOFILES) $(RTMIDIFILES)
 
 #---------------------------------------------------------------------------------
 # Consoles/Embedded
@@ -509,7 +534,7 @@ export INCLUDE := \
 					-I$(CURDIR)/$(BUILD)
 export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-.PHONY: $(BUILD) clean
+.PHONY: $(BUILD) clean brick
 
 #---------------------------------------------------------------------------------
 
@@ -523,6 +548,33 @@ $(BUILD):
 clean:
 	@echo clean ...
 	@rm -fr $(OUTPUT).$(EXTENSION) $(BUILD) *.elf *.gxb *.fxe *.gdb
+
+#---------------------------------------------------------------------------------
+# TrimUI Brick (TG5040): build inside Colima/Docker against volume lgpt-tc.
+#   export DOCKER_HOST=unix://$$HOME/.colima/default/docker.sock   # if needed
+#   make brick
+#---------------------------------------------------------------------------------
+TG5040_DOCKER_IMAGE  ?= debian:bookworm
+TG5040_DOCKER_DEVKIT ?= /opt/tg5040-nextui-toolchain
+TG5040_DOCKER_VOLUME ?= lgpt-tc
+
+brick:
+	docker run --rm --platform linux/arm64 \
+		-v $(TG5040_DOCKER_VOLUME):$(TG5040_DOCKER_DEVKIT) \
+		-v $(abspath $(PROJECTDIR)/..):/src \
+		-w /src/projects \
+		$(TG5040_DOCKER_IMAGE) \
+		bash -lc 'set -euo pipefail; \
+			apt-get update -qq; \
+			DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+				make python3 python3-pil clang lld binutils >/dev/null; \
+			make PLATFORM=TG5040 \
+				DEVKIT=$(TG5040_DOCKER_DEVKIT) \
+				LGPT_TG5040_USE_CLANG=1 \
+				STRIP=strip \
+				-j$$(nproc) \
+				buildTG5040; \
+			file /src/lgpt-tg5040.elf'
 
 #---------------------------------------------------------------------------------
 

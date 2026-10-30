@@ -12,6 +12,10 @@ tracks/**
 font.h
 projects/resources/packaging/samplelib
 projects/resources/packaging/lgpt_BETA
+projects/samplelib
+samplelib
+projects/lgpt.apple
+projects/config.xml
 .DS_Store
 
 # build artifacts as per projects/resources/packaging/lgpt_package.sh

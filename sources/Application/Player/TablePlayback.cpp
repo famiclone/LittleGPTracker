@@ -77,6 +77,7 @@ void TablePlayback::Start(I_Instrument *i,Table &table,bool automated) {
 
 void TablePlayback::Stop() {
 	table_=0 ;
+	instrument_=0 ;
 	position_[0]=0 ;
 	position_[1]=0 ;
 	position_[2]=0 ;

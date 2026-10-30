@@ -35,6 +35,8 @@
 #define I_CMD_FBTN MAKE_FOURCC('F','B','T','N')
 #define I_CMD_SLCE MAKE_FOURCC('S','L','C','E')
 #define I_CMD_STOP MAKE_FOURCC('S','T','O','P')
+#define I_CMD_RVRS MAKE_FOURCC('R','V','R','S')
+#define I_CMD_TSTR MAKE_FOURCC('T','S','T','R')
 
 class CommandList {
 public:

@@ -3,6 +3,7 @@
 #include "Application/Commands/EventDispatcher.h"
 #include "Application/Instruments/SamplePool.h"
 #include "Application/Mixer/MixerService.h"
+#include "Application/Model/ColorScheme.h"
 #include "Application/Model/Mixer.h"
 #include "Application/Persistency/PersistencyService.h"
 #include "Application/Player/TablePlayback.h"
@@ -67,6 +68,102 @@ void AppWindow::defineColor(const char *colorName, GUIColor &color) {
     }
 }
 
+AppWindow *AppWindow::GetInstance() { return instance; }
+
+GUIColor AppWindow::GetPaletteColor(ColorDefinition cd) {
+    switch (cd) {
+    case CD_BACKGROUND:
+        return backgroundColor_;
+    case CD_NORMAL:
+        return normalColor_;
+    case CD_BORDER:
+        return borderColor_;
+    case CD_HILITE1:
+        return highlightColor_;
+    case CD_HILITE2:
+        return highlight2Color_;
+    case CD_CONSOLE:
+        return consoleColor_;
+    case CD_CURSOR:
+        return cursorColor_;
+    case CD_PLAY:
+        return playColor_;
+    case CD_MUTE:
+        return muteColor_;
+    case CD_SONGVIEWFE:
+        return songviewfeColor_;
+    case CD_SONGVIEW00:
+        return songview00Color_;
+    case CD_ROW:
+        return rownumberColor_;
+    case CD_ROW2:
+        return rownumber2Color_;
+    case CD_MAJORBEAT:
+        return majorbeatColor_;
+    case CD_COL_TITLE:
+        return columnTitleColor_;
+    }
+    return normalColor_;
+}
+
+void AppWindow::SetPaletteColor(ColorDefinition cd, const GUIColor &color) {
+    switch (cd) {
+    case CD_BACKGROUND:
+        backgroundColor_ = color;
+        break;
+    case CD_NORMAL:
+        normalColor_ = color;
+        break;
+    case CD_BORDER:
+        borderColor_ = color;
+        break;
+    case CD_HILITE1:
+        highlightColor_ = color;
+        break;
+    case CD_HILITE2:
+        highlight2Color_ = color;
+        break;
+    case CD_CONSOLE:
+        consoleColor_ = color;
+        break;
+    case CD_CURSOR:
+        cursorColor_ = color;
+        break;
+    case CD_PLAY:
+        playColor_ = color;
+        break;
+    case CD_MUTE:
+        muteColor_ = color;
+        break;
+    case CD_SONGVIEWFE:
+        songviewfeColor_ = color;
+        break;
+    case CD_SONGVIEW00:
+        songview00Color_ = color;
+        break;
+    case CD_ROW:
+        rownumberColor_ = color;
+        break;
+    case CD_ROW2:
+        rownumber2Color_ = color;
+        break;
+    case CD_MAJORBEAT:
+        majorbeatColor_ = color;
+        break;
+    case CD_COL_TITLE:
+        columnTitleColor_ = color;
+        break;
+    }
+}
+
+void AppWindow::InvalidatePalette() {
+    GUIWindow::Clear(backgroundColor_, true);
+    Clear(true);
+    _isDirty = true;
+    if (_currentView)
+        _currentView->SetDirty(true);
+}
+
 AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
 
     instance = this;
@@ -81,6 +178,8 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
     _chainView = 0;
     _phraseView = 0;
     _projectView = 0;
+    _settingsView = 0;
+    _appearanceView = 0;
     _instrumentView = 0;
     _tableView = 0;
     _nullView = 0;
@@ -118,6 +217,9 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
     defineColor("COL_TITLE", columnTitleColor_);
     defineColor("CONSOLE", consoleColor_);
 
+    // Override config.xml defaults with the last selected scheme, if any
+    ColorScheme::ApplyLast();
+
     GUIWindow::Clear(backgroundColor_);
 
     _nullView = new NullView((*this), 0);
@@ -142,10 +244,7 @@ AppWindow::AppWindow(I_GUIWindowImp &imp) : GUIWindow(imp) {
         _currentView->DoModal(spd, ProjectSelectCallback);
     }
 
-    memset(_charScreen, ' ', 1200);
-    memset(_preScreen, ' ', 1200);
-    memset(_charScreenProp, 0, 1200);
-    memset(_preScreenProp, 0, 1200);
+    Clear(true);
 
     Redraw();
 };
@@ -177,8 +276,8 @@ void AppWindow::Clear(bool all) {
     memset(_charScreen, ' ', 1200);
     memset(_charScreenProp, 0, 1200);
     if (all) {
-        memset(_preScreen, ' ', 1200);
-        memset(_preScreenProp, 0, 1200);
+        memset(_preScreen, 0, 1200);
+        memset(_preScreenProp, 0xFF, 1200);
     };
 };
 
@@ -200,6 +299,60 @@ void AppWindow::ClearRect(GUIRect &r) {
         pr += (40 - w);
     }
 };
+
+void AppWindow::FillRect(GUIRect &r, ColorDefinition cd) {
+    GUIColor gcolor = normalColor_;
+    switch (cd) {
+    case CD_BACKGROUND:
+        gcolor = backgroundColor_;
+        break;
+    case CD_NORMAL:
+        break;
+    case CD_BORDER:
+        gcolor = borderColor_;
+        break;
+    case CD_HILITE1:
+        gcolor = highlightColor_;
+        break;
+    case CD_HILITE2:
+        gcolor = highlight2Color_;
+        break;
+    case CD_CONSOLE:
+        gcolor = consoleColor_;
+        break;
+    case CD_CURSOR:
+        gcolor = cursorColor_;
+        break;
+    case CD_PLAY:
+        gcolor = playColor_;
+        break;
+    case CD_MUTE:
+        gcolor = muteColor_;
+        break;
+    case CD_SONGVIEWFE:
+        gcolor = songviewfeColor_;
+        break;
+    case CD_SONGVIEW00:
+        gcolor = songview00Color_;
+        break;
+    case CD_ROW:
+        gcolor = rownumberColor_;
+        break;
+    case CD_ROW2:
+        gcolor = rownumber2Color_;
+        break;
+    case CD_MAJORBEAT:
+        gcolor = majorbeatColor_;
+        break;
+    case CD_COL_TITLE:
+        gcolor = columnTitleColor_;
+        break;
+    default:
+        break;
+    }
+    GUIWindow::SetColor(gcolor);
+    GUIWindow::DrawRect(r);
+}
 
 //
 // Redraws the screen and flush it.
@@ -314,6 +467,11 @@ void AppWindow::Flush() {
         pos._x = 0;
     }
     long flushEnd = System::GetInstance()->GetClock();
+    // Pixel overlays (waveforms) run after the char grid. Views erase or
+    // skip their strip themselves when a modal is open.
+    if (_currentView) {
+        _currentView->DrawOverlay();
+    }
     GUIWindow::Flush();
     Unlock();
     memcpy(_preScreen, _charScreen, 1200);
@@ -383,6 +541,12 @@ void AppWindow::LoadProject(const Path &p) {
     _projectView = new ProjectView((*this), _viewData);
     _projectView->AddObserver((*this));
 
+    _settingsView = new SettingsView((*this), _viewData);
+    _settingsView->AddObserver((*this));
+
+    _appearanceView = new AppearanceView((*this), _viewData);
+    _appearanceView->AddObserver((*this));
+
     _instrumentView = new InstrumentView((*this), _viewData);
     _instrumentView->AddObserver((*this));
 
@@ -441,6 +605,8 @@ void AppWindow::CloseProject() {
     SAFE_DELETE(_chainView);
     SAFE_DELETE(_phraseView);
     SAFE_DELETE(_projectView);
+    SAFE_DELETE(_settingsView);
+    SAFE_DELETE(_appearanceView);
     SAFE_DELETE(_instrumentView);
     SAFE_DELETE(_tableView);
 
@@ -478,40 +644,43 @@ bool AppWindow::onEvent(GUIEvent &event) {
 
     MixerService *sm = MixerService::GetInstance();
     sm->Lock();
+    {
+        SysMutexLocker locker(drawMutex_);
 
-    switch (event.GetType()) {
+        switch (event.GetType()) {
 
-    case ET_PADBUTTONDOWN:
+        case ET_PADBUTTONDOWN:
 
-        _mask |= v;
-        if (_currentView)
-            _currentView->ProcessButton(_mask, true);
-        break;
+            _mask |= v;
+            if (_currentView)
+                _currentView->ProcessButton(_mask, true);
+            break;
 
-    case ET_PADBUTTONUP:
+        case ET_PADBUTTONUP:
 
-        _mask &= (0xFFFF - v);
-        if (_currentView)
-            _currentView->ProcessButton(_mask, false);
-        break;
+            _mask &= (0xFFFF - v);
+            if (_currentView)
+                _currentView->ProcessButton(_mask, false);
+            break;
 
-    case ET_SYSQUIT:
-        _shouldQuit = true;
-        break;
+        case ET_SYSQUIT:
+            _shouldQuit = true;
+            break;
 
-        /*		case ET_KEYDOWN:
-            if
-           (event.GetValue()==EKT_ESCAPE&&!Player::GetInstance()->IsRunning()) {
-                if (_currentView!=_listView) {
-                    CloseProject() ;
-                    _isDirty=true ;
-                } else {
-                    System::GetInstance()->PostQuitMessage() ;
-                };
-            } ;*/
+            /*		case ET_KEYDOWN:
+                if
+               (event.GetValue()==EKT_ESCAPE&&!Player::GetInstance()->IsRunning()) {
+                    if (_currentView!=_listView) {
+                        CloseProject() ;
+                        _isDirty=true ;
+                    } else {
+                        System::GetInstance()->PostQuitMessage() ;
+                    };
+                } ;*/
 
-    default:
-        break;
+        default:
+            break;
+        }
     }
     sm->Unlock();
 
@@ -580,6 +749,12 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
         case VT_PROJECT:
             _currentView = _projectView;
             break;
+        case VT_SETTINGS:
+            _currentView = _settingsView;
+            break;
+        case VT_APPEARANCE:
+            _currentView = _appearanceView;
+            break;
         case VT_INSTRUMENT:
             _currentView = _instrumentView;
             break;
@@ -627,6 +802,18 @@ void AppWindow::Update(Observable &o, I_ObservableData *d) {
         char *name = (char *)ve->GetData();
         _loadAfterSaveAsProject = true;
         _newProjectToLoad = name;
+        break;
+    }
+
+    case VET_RENAME_PROJECT: {
+        char *name = (char *)ve->GetData();
+        _root = Path(name);
+        Path::SetAlias("project", _root.GetPath().c_str());
+        Path::SetAlias("samples", "project:samples");
+        SaveLastProject(_root);
+        if (_songView) {
+            _songView->SetSongName(_root.GetName().c_str());
+        }
         break;
     }
 

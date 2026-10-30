@@ -134,6 +134,16 @@ static inline std::string* getHelpLegend(FourCC command) {
 			result[1].assign("immediately");
 			result[2].assign("");
 			break;
+		case I_CMD_RVRS:
+			result[0].assign("ReVeRSe:aabb");
+			result[1].assign("00 toggle, 01 rev, 02 fwd");
+			result[2].assign("from offset aa");
+			break;
+		case I_CMD_TSTR:
+			result[0].assign("TimeSTretch:aabb");
+			result[1].assign("stretch to bb (7F=1x)");
+			result[2].assign("at speed aa");
+			break;
 		default:
 
 			result[0].assign("");

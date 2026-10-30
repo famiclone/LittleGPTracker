@@ -8,6 +8,8 @@
 
 #define FCC_EDIT MAKE_FOURCC('V', 'O', 'L', 'M')
 
+class I_Instrument;
+
 class PhraseView : public View {
 
   public:
@@ -17,6 +19,7 @@ class PhraseView : public View {
     virtual void DrawView();
     virtual void OnPlayerUpdate(PlayerEventType, unsigned int tick = 0);
     virtual void OnFocus();
+    virtual void DrawOverlay();
     void onCommandSelectorResult(ModalView &d);
     void onCommandSelectorPreview(ModalView &d);
 
@@ -50,8 +53,17 @@ class PhraseView : public View {
     void processSelectionButtonMask(unsigned short mask);
 
     void setTextProps(GUITextProperties &props, int row, int col, bool restore);
+    void drawSampleStrip();
+    void ensureWaveformCache(short *pcm, int nFrames, int nCh, int sampleIdx);
+    void clearWaveformStrip(int px, int py, int pw, int ph);
+    int resolvePlayingSlice(int instrId, I_Instrument *instr, int nSlices);
+    void drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
+                           I_Instrument *instr);
+    void drawSynthOverlay(int px, int py, int pw, int ph, I_Instrument *instr);
+    int synthPreviewKey(I_Instrument *instr) const;
 
   private:
+    enum { kWaveBins = 48 };
     int row_;
     int col_;
     int lastNote_;
@@ -66,6 +78,22 @@ class PhraseView : public View {
     void printHelpLegend(FourCC command, GUITextProperties props);
     void enterCommandSelector();
     int findClosestInstrumentFor(int);
+    unsigned char wavePeak_[kWaveBins];
+    int waveCacheSample_;
+    int waveCacheFrames_;
+    // Skip redrawing the pixel strip when nothing visible changed —
+    // Flush runs on every player tick and was starving audio on Phrase.
+    bool overlayValid_;
+    int overlayDrawnSample_;
+    int overlayDrawnStart_;
+    int overlayDrawnEnd_;
+    int overlayDrawnSlices_;
+    int overlayDrawnSlice_;
+    bool overlayDrawnSliceToEnd_;
+    int stickyPlayingSlice_;
+    int overlayDrawnSynthKey_;
+    signed char synthWaveBin_[kWaveBins];
+    signed char synthLfoBin_[kWaveBins];
     struct clipboard {
         bool active_;
         int col_;

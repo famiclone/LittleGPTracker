@@ -1,7 +1,12 @@
 #include "PhraseView.h"
+#include "Application/AppWindow.h"
 #include "Application/Instruments/CommandList.h"
+#include "Application/Instruments/SampleInstrument.h"
+#include "Application/Instruments/SamplePool.h"
+#include "Application/Instruments/SynthInstrument.h"
 #include "Application/Model/Scale.h"
 #include "Application/Model/Table.h"
+#include "Application/Player/PlayerMixer.h"
 #include "Application/Utils/HelpLegend.h"
 #include "Application/Utils/char.h"
 #include "Application/Views/CommandSelectorCommon.h"
@@ -36,6 +41,20 @@ PhraseView::PhraseView(GUIWindow &w, ViewData *viewData)
     lastCmd_ = I_CMD_NONE;
     lastParam_ = 0;
     commandSelectorModalActive_ = false;
+    waveCacheSample_ = -1;
+    waveCacheFrames_ = -1;
+    memset(wavePeak_, 0, sizeof(wavePeak_));
+    overlayValid_ = false;
+    overlayDrawnSample_ = -1;
+    overlayDrawnStart_ = -1;
+    overlayDrawnEnd_ = -1;
+    overlayDrawnSlices_ = -1;
+    overlayDrawnSlice_ = -2;
+    overlayDrawnSliceToEnd_ = false;
+    stickyPlayingSlice_ = -1;
+    overlayDrawnSynthKey_ = 0;
+    memset(synthWaveBin_, 0, sizeof(synthWaveBin_));
+    memset(synthLfoBin_, 0, sizeof(synthLfoBin_));
 
     clipboard_.active_ = false;
     clipboard_.width_ = 0;
@@ -1127,6 +1146,559 @@ int PhraseView::findClosestInstrumentFor(int row) {
     return -1; // none found in phrase
 }
 
+/*
+ * Reserve char cells under the phrase so the vector overlay has a clean
+ * background (drawn in DrawOverlay after the char grid flush).
+ */
+void PhraseView::drawSampleStrip() {
+    if (miniLayout_) {
+        return;
+    }
+
+    GUIPoint anchor = GetAnchor();
+    const int stripLeft = View::margin_ + 1;
+    const int stripWidth = 38;
+    const int stripTop = anchor._y + 17;
+    const int stripHeight = 5;
+
+    ClearRect(stripLeft - 1, stripTop, stripWidth + 2, stripHeight);
+}
+
+void PhraseView::ensureWaveformCache(short *pcm, int nFrames, int nCh,
+                                     int sampleIdx) {
+    if (waveCacheSample_ == sampleIdx && waveCacheFrames_ == nFrames) {
+        return;
+    }
+    waveCacheSample_ = sampleIdx;
+    waveCacheFrames_ = nFrames;
+    for (int b = 0; b < kWaveBins; b++) {
+        int start = (int)((long)b * nFrames / kWaveBins);
+        int end = (int)((long)(b + 1) * nFrames / kWaveBins);
+        if (end <= start) {
+            end = start + 1;
+        }
+        if (end > nFrames) {
+            end = nFrames;
+        }
+        int peak = 0;
+        int stride = ((end - start) / 48) + 1;
+        for (int f = start; f < end; f += stride) {
+            int sample = pcm[f * nCh];
+            if (sample < 0) {
+                sample = -sample;
+            }
+            if (sample > peak) {
+                peak = sample;
+            }
+        }
+        // Store 0..255 amplitude for later scaling to strip height.
+        int amp = (peak * 255) / 32768;
+        if (amp < 1 && peak > 0) {
+            amp = 1;
+        }
+        if (amp > 255) {
+            amp = 255;
+        }
+        wavePeak_[b] = (unsigned char)amp;
+    }
+}
+
+int PhraseView::resolvePlayingSlice(int instrId, I_Instrument *instr,
+                                    int nSlices) {
+    if (nSlices <= 1) {
+        stickyPlayingSlice_ = -1;
+        return -1;
+    }
+
+    Player *player = Player::GetInstance();
+    PlayerMixer *pm = PlayerMixer::GetInstance();
+
+    if (player->IsRunning()) {
+        // Prefer the note currently sounding on a channel using this instrument.
+        for (int c = 0; c < SONG_CHANNEL_COUNT; c++) {
+            int note = pm->GetChannelNote(c);
+            if (note == 0xFF || note >= nSlices) {
+                continue;
+            }
+            I_Instrument *chInstr = pm->GetInstrument(c);
+            if (!chInstr) {
+                chInstr = pm->GetLastInstrument(c);
+            }
+            if (chInstr == instr) {
+                stickyPlayingSlice_ = note;
+                return note;
+            }
+        }
+
+        // Oneshots clear notes_ quickly — fall back to the note under the
+        // playhead in this phrase for a channel that is playing it.
+        unsigned char *notes =
+            phrase_->note_ + (16 * viewData_->currentPhrase_);
+        unsigned char *instrs =
+            phrase_->instr_ + (16 * viewData_->currentPhrase_);
+        for (int c = 0; c < SONG_CHANNEL_COUNT; c++) {
+            if (!player->IsChannelPlaying(c)) {
+                continue;
+            }
+            if (viewData_->currentPlayPhrase_[c] != viewData_->currentPhrase_) {
+                continue;
+            }
+            if (viewData_->playMode_ == PM_AUDITION) {
+                continue;
+            }
+            int prow = viewData_->phrasePlayPos_[c];
+            if (prow < 0 || prow > 15) {
+                continue;
+            }
+            unsigned char n = notes[prow];
+            if (n == 0xFF || n >= nSlices) {
+                continue;
+            }
+            unsigned char id = instrs[prow];
+            if (id == 0xFF) {
+                id = (unsigned char)findClosestInstrumentFor(prow);
+            }
+            if ((int)id == instrId) {
+                stickyPlayingSlice_ = n;
+                return n;
+            }
+        }
+
+        // Keep last slice lit between oneshot gaps so we don't thrash redraws
+        // (and so the highlight doesn't flicker every tick).
+        if (stickyPlayingSlice_ >= 0 && stickyPlayingSlice_ < nSlices) {
+            return stickyPlayingSlice_;
+        }
+    } else {
+        stickyPlayingSlice_ = -1;
+    }
+
+    // Editing: highlight the slice for the note on the cursor row.
+    unsigned char *notes = phrase_->note_ + (16 * viewData_->currentPhrase_);
+    unsigned char n = notes[row_];
+    if (n != 0xFF && n < nSlices) {
+        return n;
+    }
+    return -1;
+}
+
+/*
+ * Pixel waveform + slice markers/highlight. Domain matches the engine:
+ * slices divide [0 .. loopEnd] (or full sample if loop end unset).
+ * Synth instruments show oscillator*ADSR with LFO as a thin white line.
+ */
+void PhraseView::clearWaveformStrip(int px, int py, int pw, int ph) {
+    if (overlayValid_ && overlayDrawnSample_ == -3 &&
+        overlayDrawnSynthKey_ == 0) {
+        return;
+    }
+    AppWindow &aw = (AppWindow &)w_;
+    GUIRect strip(px - 2, py, px + pw + 2, py + ph);
+    aw.BeginBatchDraw();
+    aw.FillRect(strip, CD_BACKGROUND);
+    aw.EndBatchDraw(strip);
+    overlayValid_ = true;
+    overlayDrawnSample_ = -3;
+    overlayDrawnStart_ = -1;
+    overlayDrawnEnd_ = -1;
+    overlayDrawnSlices_ = -1;
+    overlayDrawnSlice_ = -2;
+    overlayDrawnSynthKey_ = 0;
+}
+
+void PhraseView::DrawOverlay() {
+    if (miniLayout_) {
+        return;
+    }
+
+    if (HasModal()) {
+        overlayValid_ = false;
+        return;
+    }
+
+    GUIPoint anchor = GetAnchor();
+
+    const int stripLeft = View::margin_ + 1;
+    const int stripWidth = 38;
+    const int stripTop = anchor._y + 17;
+    const int stripHeight = 5;
+    const int cw = AppWindow::CharWidth();
+    const int ch = AppWindow::CharHeight();
+
+    const int px = stripLeft * cw;
+    const int py = stripTop * ch;
+    const int pw = stripWidth * cw;
+    const int ph = stripHeight * ch;
+
+    int instrId = findClosestInstrumentFor(row_);
+    if (instrId < 0) {
+        clearWaveformStrip(px, py, pw, ph);
+        return;
+    }
+
+    InstrumentBank *bank = viewData_->project_->GetInstrumentBank();
+    I_Instrument *instr = bank->GetInstrument(instrId);
+    if (!instr) {
+        clearWaveformStrip(px, py, pw, ph);
+        return;
+    }
+
+    if (instr->GetType() == IT_SAMPLE) {
+        drawSampleOverlay(px, py, pw, ph, instrId, instr);
+        return;
+    }
+    if (instr->GetType() == IT_SYNTH) {
+        drawSynthOverlay(px, py, pw, ph, instr);
+        return;
+    }
+
+    clearWaveformStrip(px, py, pw, ph);
+}
+
+void PhraseView::drawSampleOverlay(int px, int py, int pw, int ph, int instrId,
+                                   I_Instrument *instr) {
+    AppWindow &aw = (AppWindow &)w_;
+    SampleInstrument *si = (SampleInstrument *)instr;
+    int sampleIdx = si->GetSampleIndex();
+    if (sampleIdx < 0 || sampleIdx == NO_SAMPLE) {
+        clearWaveformStrip(px, py, pw, ph);
+        return;
+    }
+
+    SoundSource *src = SamplePool::GetInstance()->GetSource(sampleIdx);
+    if (!src) {
+        clearWaveformStrip(px, py, pw, ph);
+        return;
+    }
+
+    short *pcm = (short *)src->GetSampleBuffer(-1);
+    int nFrames = src->GetSize(-1);
+    int nCh = src->GetChannelCount(-1);
+    if (!pcm || nFrames <= 0 || nCh < 1) {
+        clearWaveformStrip(px, py, pw, ph);
+        return;
+    }
+
+    Variable *startVar = si->FindVariable(SIP_START);
+    Variable *endVar = si->FindVariable(SIP_END);
+    int startFrame = startVar ? startVar->GetInt() : 0;
+    int endFrame = endVar ? endVar->GetInt() : nFrames;
+    if (endFrame <= 0 || endFrame > nFrames) {
+        endFrame = nFrames;
+    }
+    if (startFrame < 0) {
+        startFrame = 0;
+    }
+    if (startFrame >= endFrame) {
+        startFrame = endFrame > 1 ? endFrame - 1 : 0;
+    }
+
+    Variable *slicesVar = si->FindVariable(SIP_SLICES);
+    int nSlices = slicesVar ? slicesVar->GetInt() : 1;
+    if (nSlices < 1) {
+        nSlices = 1;
+    }
+    Variable *toEndVar = si->FindVariable(SIP_SLICETOEND);
+    bool sliceToEnd = (nSlices > 1) && toEndVar && toEndVar->GetInt() != 0;
+
+    int playingSlice = resolvePlayingSlice(instrId, instr, nSlices);
+
+    // Flush is invoked on every player tick / expose. Re-painting ~100 rects
+    // each time starves the audio fill thread on macOS — keep the previous
+    // pixels when the visible strip state is unchanged.
+    if (overlayValid_ && overlayDrawnSample_ == sampleIdx &&
+        overlayDrawnStart_ == startFrame && overlayDrawnEnd_ == endFrame &&
+        overlayDrawnSlices_ == nSlices && overlayDrawnSlice_ == playingSlice &&
+        overlayDrawnSliceToEnd_ == sliceToEnd && overlayDrawnSynthKey_ == 0) {
+        return;
+    }
+
+    ensureWaveformCache(pcm, nFrames, nCh, sampleIdx);
+
+    int selX0 = px + (int)((long)startFrame * pw / nFrames);
+    int selX1 = px + (int)((long)endFrame * pw / nFrames);
+    if (selX0 < px)
+        selX0 = px;
+    if (selX1 > px + pw)
+        selX1 = px + pw;
+    if (selX1 <= selX0)
+        selX1 = selX0 + 1;
+    int selW = selX1 - selX0;
+    if (selW < 1)
+        selW = 1;
+
+    GUIRect stripDirty(px - 2, py, px + pw + 2, py + ph);
+    aw.BeginBatchDraw();
+
+    // Backdrop + side rails
+    aw.FillRect(stripDirty, CD_BACKGROUND);
+    GUIRect leftRail(px - 2, py, px, py + ph);
+    GUIRect rightRail(px + pw, py, px + pw + 2, py + ph);
+    aw.FillRect(leftRail, (selX0 <= px) ? CD_BORDER : CD_SONGVIEW00);
+    aw.FillRect(rightRail, (selX1 >= px + pw) ? CD_BORDER : CD_SONGVIEW00);
+
+    const int midY = py + ph / 2;
+    const int maxAmp = ph / 2 - 1;
+
+    // Horizontal center baseline: dimmed outside [selX0, selX1], bright inside.
+    if (selX0 > px) {
+        GUIRect midLeft(px, midY - 1, selX0, midY + 1);
+        aw.FillRect(midLeft, CD_SONGVIEW00);
+    }
+    GUIRect midActive(selX0, midY - 1, selX1, midY + 1);
+    aw.FillRect(midActive, CD_HILITE1);
+    if (selX1 < px + pw) {
+        GUIRect midRight(selX1, midY - 1, px + pw, midY + 1);
+        aw.FillRect(midRight, CD_SONGVIEW00);
+    }
+
+    // Active slice fill inside [selX0 .. selX1].
+    int playX0 = -1;
+    int playX1 = -1;
+    if (playingSlice >= 0 && nSlices > 1) {
+        playX0 = selX0 + (int)((long)playingSlice * selW / nSlices);
+        playX1 = sliceToEnd
+                     ? selX1
+                     : selX0 + (int)((long)(playingSlice + 1) * selW / nSlices);
+        if (playX1 <= playX0) {
+            playX1 = playX0 + 1;
+        }
+        GUIRect band(playX0, py, playX1, py + ph);
+        aw.FillRect(band, CD_HILITE2);
+        GUIRect tip(playX0, py, playX1, py + 2);
+        aw.FillRect(tip, CD_PLAY);
+        GUIRect tip2(playX0, py + ph - 2, playX1, py + ph);
+        aw.FillRect(tip2, CD_PLAY);
+    }
+
+    // Cached envelope mapped across the strip.
+    for (int b = 0; b < kWaveBins; b++) {
+        int x0 = px + (int)((long)b * pw / kWaveBins);
+        int x1 = px + (int)((long)(b + 1) * pw / kWaveBins);
+        if (x1 <= x0) {
+            x1 = x0 + 1;
+        }
+        int amp = (wavePeak_[b] * maxAmp) / 255;
+        if (amp < 1 && wavePeak_[b] > 0) {
+            amp = 1;
+        }
+        if (amp <= 0) {
+            continue;
+        }
+        int midBin = (x0 + x1) / 2;
+        bool inSelected = (midBin >= selX0 && midBin < selX1);
+        bool inPlaying =
+            inSelected && (playX0 >= 0) && (midBin >= playX0 && midBin < playX1);
+        ColorDefinition col = !inSelected ? CD_SONGVIEW00
+                              : inPlaying ? CD_PLAY
+                                          : CD_HILITE1;
+        GUIRect column(x0, midY - amp, x1, midY + amp + 1);
+        aw.FillRect(column, col);
+    }
+
+    // Slice markers inside [selX0 .. selX1].
+    if (nSlices > 1) {
+        for (int s = 1; s < nSlices; s++) {
+            int mx = selX0 + (int)((long)s * selW / nSlices);
+            GUIRect marker(mx, py, mx + 1, py + ph);
+            aw.FillRect(marker, CD_BORDER);
+        }
+    }
+
+    // White active-segment bracket matching InstrumentView.
+    GUIRect startBar(selX0 - 1, py, selX0 + 1, py + ph);
+    GUIRect endBar(selX1 - 1, py, selX1 + 1, py + ph);
+    GUIRect bottomBar(selX0 - 1, py + ph - 2, selX1 + 1, py + ph);
+    aw.FillRect(startBar, CD_NORMAL);
+    aw.FillRect(endBar, CD_NORMAL);
+    aw.FillRect(bottomBar, CD_NORMAL);
+
+    aw.EndBatchDraw(stripDirty);
+
+    overlayValid_ = true;
+    overlayDrawnSample_ = sampleIdx;
+    overlayDrawnStart_ = startFrame;
+    overlayDrawnEnd_ = endFrame;
+    overlayDrawnSlices_ = nSlices;
+    overlayDrawnSlice_ = playingSlice;
+    overlayDrawnSliceToEnd_ = sliceToEnd;
+    overlayDrawnSynthKey_ = 0;
+}
+
+int PhraseView::synthPreviewKey(I_Instrument *instr) const {
+    // Fingerprint of params that affect the strip so we can skip redraws.
+    int mode = 0, wave = 0, mshape = 0, atk = 0, dec = 0, sus = 0, rel = 0;
+    int rate = 0, depth = 0, sz = 0, mult = 0, warp = 0, scan = 0;
+    int tmb = 0, col = 0, deg = 0, red = 0, amp = 0, lim = 0;
+    Variable *v;
+    if ((v = instr->FindVariable(SYP_MODE)))
+        mode = v->GetInt();
+    if ((v = instr->FindVariable(SYP_WAVEFORM)))
+        wave = v->GetInt();
+    if ((v = instr->FindVariable(SYP_MACROSHAPE)))
+        mshape = v->GetInt();
+    if ((v = instr->FindVariable(SYP_ATTACK)))
+        atk = v->GetInt();
+    if ((v = instr->FindVariable(SYP_DECAY)))
+        dec = v->GetInt();
+    if ((v = instr->FindVariable(SYP_SUSTAIN)))
+        sus = v->GetInt();
+    if ((v = instr->FindVariable(SYP_RELEASE)))
+        rel = v->GetInt();
+    if ((v = instr->FindVariable(SYP_LFORATE)))
+        rate = v->GetInt();
+    if ((v = instr->FindVariable(SYP_LFODEPTH)))
+        depth = v->GetInt();
+    if ((v = instr->FindVariable(SYP_SIZE)))
+        sz = v->GetInt();
+    if ((v = instr->FindVariable(SYP_MULT)))
+        mult = v->GetInt();
+    if ((v = instr->FindVariable(SYP_WARP)))
+        warp = v->GetInt();
+    if ((v = instr->FindVariable(SYP_SCAN)))
+        scan = v->GetInt();
+    if ((v = instr->FindVariable(SYP_TIMBRE)))
+        tmb = v->GetInt();
+    if ((v = instr->FindVariable(SYP_COLOR)))
+        col = v->GetInt();
+    if ((v = instr->FindVariable(SYP_DEGRADE)))
+        deg = v->GetInt();
+    if ((v = instr->FindVariable(SYP_REDUX)))
+        red = v->GetInt();
+    if ((v = instr->FindVariable(SYP_AMP)))
+        amp = v->GetInt();
+    if ((v = instr->FindVariable(SYP_LIM)))
+        lim = v->GetInt();
+    return (mode & 0x3) ^ ((wave & 0xF) << 2) ^ ((mshape & 0xF) << 6) ^
+           ((atk & 0xFF) << 4) ^ ((dec & 0xFF) << 12) ^ ((sus & 0xFF) << 20) ^
+           ((rel & 0xFF) << 7) ^ ((rate & 0xFF) << 15) ^
+           ((depth & 0xFF) << 23) ^ ((sz & 0xFF) << 2) ^ ((mult & 0xFF) << 10) ^
+           ((warp & 0xFF) << 18) ^ ((scan & 0xFF) << 24) ^ ((tmb & 0xFF) << 3) ^
+           ((col & 0xFF) << 11) ^ ((deg & 0xFF) << 19) ^ ((red & 0xFF) << 21) ^
+           ((amp & 0xFF) << 5) ^ ((lim & 0xF) << 28);
+}
+
+void PhraseView::drawSynthOverlay(int px, int py, int pw, int ph,
+                                  I_Instrument *instr) {
+    AppWindow &aw = (AppWindow &)w_;
+    SynthInstrument *sy = (SynthInstrument *)instr;
+    int key = synthPreviewKey(instr);
+
+    if (overlayValid_ && overlayDrawnSynthKey_ == key &&
+        overlayDrawnSample_ == -2) {
+        return;
+    }
+
+    sy->FillPhrasePreview(synthWaveBin_, synthLfoBin_, kWaveBins);
+
+    GUIRect stripDirty(px - 2, py, px + pw + 2, py + ph);
+    aw.BeginBatchDraw();
+
+    aw.FillRect(stripDirty, CD_BACKGROUND);
+    GUIRect leftRail(px - 2, py, px, py + ph);
+    GUIRect rightRail(px + pw, py, px + pw + 2, py + ph);
+    aw.FillRect(leftRail, CD_BORDER);
+    aw.FillRect(rightRail, CD_BORDER);
+
+    const int midY = py + ph / 2;
+    const int maxAmp = ph / 2 - 1;
+    if (maxAmp < 1) {
+        aw.EndBatchDraw(stripDirty);
+        return;
+    }
+
+    // Center line
+    GUIRect mid(px, midY, px + pw, midY + 1);
+    aw.FillRect(mid, CD_BORDER);
+
+    // Oscillator * ADSR as bipolar columns.
+    for (int b = 0; b < kWaveBins; b++) {
+        int x0 = px + (int)((long)b * pw / kWaveBins);
+        int x1 = px + (int)((long)(b + 1) * pw / kWaveBins);
+        if (x1 <= x0) {
+            x1 = x0 + 1;
+        }
+        int amp = ((int)synthWaveBin_[b] * maxAmp) / 127;
+        if (amp == 0 && synthWaveBin_[b] != 0) {
+            amp = (synthWaveBin_[b] > 0) ? 1 : -1;
+        }
+        int y0 = midY;
+        int y1 = midY - amp;
+        if (y1 < y0) {
+            int tmp = y0;
+            y0 = y1;
+            y1 = tmp;
+        }
+        y1 += 1;
+        if (y0 < py)
+            y0 = py;
+        if (y1 > py + ph)
+            y1 = py + ph;
+        if (y1 <= y0) {
+            continue;
+        }
+        GUIRect column(x0, y0, x1, y1);
+        aw.FillRect(column, CD_HILITE1);
+    }
+
+    // LFO on top — thin near-white (FOREGROUND) 1px stroke.
+    int prevX = -1;
+    int prevY = -1;
+    for (int b = 0; b < kWaveBins; b++) {
+        int x = px + (int)((long)b * pw / kWaveBins) +
+                (int)((long)pw / (kWaveBins * 2));
+        int amp = ((int)synthLfoBin_[b] * maxAmp) / 127;
+        int y = midY - amp;
+        if (y < py)
+            y = py;
+        if (y >= py + ph)
+            y = py + ph - 1;
+        GUIRect dot(x, y, x + 1, y + 1);
+        aw.FillRect(dot, CD_NORMAL);
+        if (prevX >= 0) {
+            // Connect bins with a 1px Bresenham-ish fill so the stroke reads.
+            int x0 = prevX;
+            int y0 = prevY;
+            int x1 = x;
+            int y1 = y;
+            int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
+            int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
+            int sx = (x0 < x1) ? 1 : -1;
+            int sy = (y0 < y1) ? 1 : -1;
+            int err = dx - dy;
+            while (true) {
+                GUIRect p(x0, y0, x0 + 1, y0 + 1);
+                aw.FillRect(p, CD_NORMAL);
+                if (x0 == x1 && y0 == y1) {
+                    break;
+                }
+                int e2 = 2 * err;
+                if (e2 > -dy) {
+                    err -= dy;
+                    x0 += sx;
+                }
+                if (e2 < dx) {
+                    err += dx;
+                    y0 += sy;
+                }
+            }
+        }
+        prevX = x;
+        prevY = y;
+    }
+
+    aw.EndBatchDraw(stripDirty);
+
+    overlayValid_ = true;
+    overlayDrawnSample_ = -2; // synth marker (not a sample index)
+    overlayDrawnStart_ = -1;
+    overlayDrawnEnd_ = -1;
+    overlayDrawnSlices_ = -1;
+    overlayDrawnSlice_ = -2;
+    overlayDrawnSliceToEnd_ = false;
+    overlayDrawnSynthKey_ = key;
+}
+
 void PhraseView::processSelectionButtonMask(unsigned short mask) {
 
     Player *player = Player::GetInstance();
@@ -1250,6 +1822,8 @@ void PhraseView::setTextProps(GUITextProperties &props, int row, int col,
 void PhraseView::DrawView() {
 
     Clear();
+    overlayValid_ = false; // Clear() wipes the pixel strip; redraw on next Flush
+    stickyPlayingSlice_ = -1;
     View::EnableNotification();
 
     GUITextProperties props;
@@ -1447,6 +2021,7 @@ void PhraseView::DrawView() {
     }
 
     drawMap();
+    drawSampleStrip();
     drawNotes();
 
     Player *player = Player::GetInstance();
@@ -1463,6 +2038,9 @@ void PhraseView::DrawView() {
 void PhraseView::OnPlayerUpdate(PlayerEventType eventType, unsigned int tick) {
 
     GUITextProperties props;
+    // Do not ClearRect the sample strip here — that dirties char cells under the
+    // pixel overlay every tick and forces expensive surface updates. The strip
+    // is reserved once in DrawView.
     drawNotes();
 
     GUIPoint anchor = GetAnchor();

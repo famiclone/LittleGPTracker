@@ -14,9 +14,11 @@
 #include "Adapters/SDL2/Timer/SDLTimer.h"
 #include "System/Console/Trace.h"
 #include "System/Console/Logger.h"
+#include <limits.h>
 #include <time.h>
 #include <sys/time.h>
 #include <memory.h>
+#include <mach-o/dyld.h>
 #include <CoreFoundation/CoreFoundation.h>
 
 EventManager *MacOSSystem::eventManager_ = NULL ;
@@ -42,16 +44,8 @@ void MacOSSystem::Boot(int argc,char **argv)
   
   // Tracing
   
-#ifdef _DEBUG
+  // Match LINUX: stdout so terminal launches show audio/mapping errors.
   Trace::GetInstance()->SetLogger(*(new StdOutLogger()));
-#else
-  Path logPath("bin:lgpt.log");
-  FileLogger *fileLogger=new FileLogger(logPath);
-  if(fileLogger->Init().Succeeded())
-  {
-    Trace::GetInstance()->SetLogger(*fileLogger);    
-  }
-#endif
   
 	Config::GetInstance()->ProcessArguments(argc,argv) ;
 	
@@ -64,8 +58,9 @@ void MacOSSystem::Boot(int argc,char **argv)
 	AudioSettings hints ;
 	hints.audioAPI_="" ;
 	hints.audioDevice_="" ;
-	hints.bufferSize_=64 ;
-	hints.preBufferCount_=0;
+	hints.bufferSize_=256 ;
+	hints.preBufferCount_=2 ;
+	hints.sampleRate_=44100 ;
 	
 	Audio::Install(new RTAudioStub(hints)) ;
 
@@ -98,34 +93,45 @@ void MacOSSystem::Shutdown()
 
 void MacOSSystem::installAliases()
 {
-	// aliases
-	
-	char path[1024];
-	CFBundleRef mainBundle = CFBundleGetMainBundle();
-	NAssert( mainBundle );
-  
-	CFURLRef mainBundleURL = CFBundleCopyBundleURL( mainBundle);
-	NAssert( mainBundleURL);
-  
-	CFStringRef cfStringRef = CFURLCopyFileSystemPath( mainBundleURL, kCFURLPOSIXPathStyle);
-	NAssert( cfStringRef);
-  
-	CFStringGetCString( cfStringRef, path, 1024, kCFStringEncodingASCII);
-  
-	CFRelease( mainBundleURL);
-	CFRelease( cfStringRef );
-  
+	char path[PATH_MAX];
+	path[0] = 0;
+
+	// Resolve the real executable path. CFBundleGetMainBundle() is unreliable
+	// for bare make binaries (it can point at the containing folder, and then
+	// stripping a path component jumps one directory too high).
+	uint32_t size = sizeof(path);
+	if (_NSGetExecutablePath(path, &size) != 0) {
+		strcpy(path, ".");
+	}
+
+	char resolved[PATH_MAX];
+	if (realpath(path, resolved) != NULL) {
+		strncpy(path, resolved, sizeof(path) - 1);
+		path[sizeof(path) - 1] = 0;
+	}
+
 	std::string asciiPath = path;
-  
-	// get the package directory:
-	std::string::size_type pos = asciiPath.find_last_of('/');
-	std::string directoryPath (asciiPath, 0, pos);
-  
-	// set the bin path alias:
-	std::string binPath = directoryPath;
-	
-	Path::SetAlias("bin",binPath.c_str()) ;
-	Path::SetAlias("root",binPath.c_str()) ;
+	std::string directoryPath;
+
+	// Xcode .app: .../LittleGPTracker.app/Contents/MacOS/LittleGPTracker
+	// -> parent of the .app (release layout puts config/samplelib there).
+	std::string::size_type appPos = asciiPath.rfind(".app/");
+	if (appPos != std::string::npos) {
+		std::string upToApp = asciiPath.substr(0, appPos + 4); // includes ".app"
+		std::string::size_type slash = upToApp.find_last_of('/');
+		directoryPath = (slash == std::string::npos)
+		                    ? std::string(".")
+		                    : upToApp.substr(0, slash);
+	} else {
+		// Bare binary (lgpt.apple): use the directory that contains it.
+		std::string::size_type pos = asciiPath.find_last_of('/');
+		directoryPath = (pos == std::string::npos)
+		                    ? std::string(".")
+		                    : asciiPath.substr(0, pos);
+	}
+
+	Path::SetAlias("bin", directoryPath.c_str());
+	Path::SetAlias("root", directoryPath.c_str());
 }
 
 //------------------------------------------------------------------------------

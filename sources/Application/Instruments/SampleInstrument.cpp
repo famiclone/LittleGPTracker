@@ -81,8 +81,11 @@ SampleInstrument::SampleInstrument() {
 	 filterMix_=new Variable("filter type",SIP_FILTMIX,0x00) ;
 	 Insert(filterMix_) ;
 
-	 filterMode_=new Variable("filter mode",SIP_FILTMODE,filterMode,3,0) ;
+	 filterMode_=new Variable("filter mode",SIP_FILTMODE,filterMode,FM_LAST,FM_OFF) ;
 	 Insert(filterMode_) ;
+
+	 amp_ = new Variable("amp", SIP_AMP, 0x00);
+	 Insert(amp_);
 
 	 attenuate_=new Variable("attenuate",SIP_ATTENUATE,0xFF) ;
 	 Insert(attenuate_) ;
@@ -97,6 +100,28 @@ SampleInstrument::SampleInstrument() {
 
 	 slices_=new Variable("slices",SIP_SLICES,1) ;
 	 Insert(slices_) ;
+
+	 sliceToEnd_ =
+	     new Variable("slicetoend", SIP_SLICETOEND, sliceToEndTypes, 2, 0);
+	 Insert(sliceToEnd_);
+
+	 reverse_ = new Variable("reverse", SIP_REVERSE, reverseTypes, 2, 0);
+	 Insert(reverse_);
+
+	 transpose_ = new Variable("transpose", SIP_TRANSPOSE, reverseTypes, 2, 1);
+	 Insert(transpose_);
+
+	 delSend_ = new Variable("del", SIP_DELSEND, 0);
+	 Insert(delSend_);
+
+	 revSend_ = new Variable("rev", SIP_REVSEND, 0);
+	 Insert(revSend_);
+
+	 tapeSend_ = new Variable("tape", SIP_TAPESEND, 0);
+	 Insert(tapeSend_);
+
+	 timeStretch_ = new Variable("timestretch", SIP_TIMESTRETCH, 0x7F);
+	 Insert(timeStretch_);
 
 	 loopStart_=new WatchedVariable("loopstart",SIP_LOOPSTART,0) ;
 	 Insert(loopStart_) ;
@@ -199,6 +224,7 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 		 return false ;
 	 } ;
 	 rp->channelCount_=source_->GetChannelCount(rp->midiNote_) ;
+	 rp->sampleSize_=source_->GetSize(rp->midiNote_) ;
 
 	 int rootNote=(rootNote_->GetInt()-60)+source_->GetRootNote(rp->midiNote_) ;
 
@@ -233,27 +259,118 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 
      float driverRate = float(Audio::GetInstance()->GetSampleRate());
      int isSliced = slices_->GetInt() > 1;
+     bool wantReverse = (reverse_ && reverse_->GetInt() != 0);
+     rp->sliceToEnd_ = false;
+
+     int domainStart = start_->GetInt();
+     if (domainStart < 0 || domainStart >= rp->sampleSize_) {
+         domainStart = 0;
+     }
+     int domainEnd = rp->rendLoopEnd_;
+     if (domainEnd > rp->sampleSize_ || domainEnd <= domainStart) {
+         domainEnd = rp->sampleSize_;
+     }
+
+     int segStart = domainStart;
+     int segEnd = domainEnd;
+
      if (isSliced) {
 		 if (rp->midiNote_ > slices_->GetInt() - 1) return false; // No sound outside of slice range
-		 int slice = rp->rendLoopEnd_ / slices_->GetInt();
-		 rp->rendLoopStart_ = rp->midiNote_ * slice;
-		 rp->rendLoopEnd_ = (rp->midiNote_ + 1) * slice;
+		 if (rp->sampleSize_ < 1) {
+			 return false;
+		 }
+		 int domainLen = domainEnd - domainStart;
+		 if (domainLen < 1) {
+			 domainLen = 1;
+		 }
+		 int slice = domainLen / slices_->GetInt();
+		 if (slice < 1) {
+			 slice = 1;
+		 }
+		 int sliceStart = domainStart + rp->midiNote_ * slice;
+		 int sliceEnd = domainStart + (rp->midiNote_ + 1) * slice;
+		 if (sliceEnd > domainEnd) {
+			 sliceEnd = domainEnd;
+		 }
+		 // Default: gate at slice bounds. "to end" plays through the remainder
+		 // of the active segment as a oneshot (see Render — no loop wrap).
+		 if (sliceToEnd_->GetInt()) {
+			 rp->sliceToEnd_ = true;
+			 if (wantReverse) {
+				 segStart = domainStart;
+				 segEnd = sliceEnd;
+			 } else {
+				 segStart = sliceStart;
+				 segEnd = domainEnd;
+			 }
+		 } else {
+			 segStart = sliceStart;
+			 segEnd = sliceEnd;
+		 }
+		 if (segStart >= segEnd) {
+			 segStart = domainEnd > 1 ? domainEnd - 1 : 0;
+			 segEnd = domainEnd;
+		 }
+	 }
+
+	 if (wantReverse) {
+		 rp->rendLoopStart_ = (segEnd > segStart + 1) ? (segEnd - 1) : segStart;
+		 rp->rendLoopEnd_ = segStart;
+		 rp->rendFirst_ = rp->rendLoopStart_;
+		 rp->reverse_ = true;
+	 } else if (isSliced) {
+		 rp->rendLoopStart_ = segStart;
+		 rp->rendLoopEnd_ = segEnd;
+		 rp->rendFirst_ = segStart;
+		 rp->reverse_ = false;
+	 } else {
+		 if (!source_->IsMulti()) {
+			 int ls = loopStart_->GetInt();
+			 if (ls < segStart || ls >= segEnd) {
+				 ls = segStart;
+			 }
+			 rp->rendLoopStart_ = ls;
+			 rp->rendLoopEnd_ = segEnd;
+		 }
+		 rp->rendFirst_ = segStart;
+		 rp->reverse_ = (rp->rendLoopEnd_ < rp->rendFirst_);
 	 }
 
 	 switch (loopmode) {
 		 case SILM_ONESHOT:
 		 case SILM_LOOP:
          case SILM_LOOP_PINGPONG:
+         case SILM_GRAIN:
              // Compute speed factor
              // if instrument sampled below 44.1Khz, should
              // travel slower in sample
 
-             rp->rendFirst_ =
-                 (isSliced) ? rp->rendLoopStart_ : start_->GetInt();
              rp->position_ = float(rp->rendFirst_);
+             rp->tsPhase_ = 0.0f;
+             rp->tsPos_[0] = rp->position_;
+             rp->tsPos_[1] = rp->position_;
              rp->baseSpeed_ =
                  fl2fp(source_->GetSampleRate(rp->midiNote_) / driverRate);
-             rp->reverse_ = (rp->rendLoopEnd_ < rp->position_);
+             rp->reverse_ = wantReverse || (rp->rendLoopEnd_ < rp->position_);
+             if (loopmode == SILM_GRAIN) {
+                 int gMin = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+                                ? rp->rendLoopStart_
+                                : rp->rendLoopEnd_;
+                 int gMax = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+                                ? rp->rendLoopEnd_
+                                : rp->rendLoopStart_;
+                 int gSpan = gMax - gMin;
+                 if (gSpan < 4)
+                     gSpan = 4;
+                 rp->grainRng_ = 0x6D2B79F5u ^ ((unsigned int)channel * 0x9E3779B9u) ^
+                                 ((unsigned int)midinote * 131u);
+                 for (int g = 0; g < 4; g++) {
+                     rp->grainPhase_[g] = 0.25f * (float)g;
+                     rp->grainPos_[g] =
+                         (float)gMin + (float)gSpan * (0.15f + 0.20f * (float)g);
+                     rp->grainDir_[g] = (g == 1) ? -1.0f : ((g == 3) ? 2.0f : 1.0f);
+                 }
+             }
 
              break;
 
@@ -308,7 +425,9 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
         int offset = midinote - rootNote;
         if (isSliced) {
             offset = rootNote - source_->GetRootNote(rp->midiNote_);
-    }
+        } else if (transpose_ && transpose_->GetInt() == 0) {
+            offset = 0;
+        }
     while (offset > 127) {
         offset -= 12;
     }
@@ -339,6 +458,11 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 
 	if (cleanstart) 
   {
+		float initTs = (float)(timeStretch_ ? timeStretch_->GetInt() : 0x7F);
+		rp->tsBase_ = initTs;
+		rp->tsCurrent_ = initTs;
+		rp->tsTarget_ = initTs;
+		rp->tsSpeed_ = 0.0f;
 
 	// Clear retrigger data
 	  
@@ -355,6 +479,17 @@ bool SampleInstrument::Start(int channel, unsigned char midinote, int flags) {
 
 		rp->cutoff_=rp->baseFCut_=fl2fp(cutoff_->GetInt()/255.0f); 
 		rp->reso_=rp->baseFRes_=fl2fp(reso_->GetInt()/255.0f) ;
+		rp->svfLp_[0] = rp->svfLp_[1] = 0.0f;
+		rp->svfBp_[0] = rp->svfBp_[1] = 0.0f;
+
+		// Reset voice filter state — long "to end" notes + high reso can
+		// leave height/speed unbounded and start crackling mid-session.
+		{
+			filter_t *flt = get_filter(channel);
+			flt->height[0] = flt->height[1] = 0;
+			flt->speed[0] = flt->speed[1] = 0;
+			flt->hipdelay[0] = flt->hipdelay[1] = 0;
+		}
 
 	// Init crush params
 
@@ -424,6 +559,7 @@ void SampleInstrument::updateFeedback(renderParams *rp) {
 			case SILM_LOOP:
             case SILM_LOOP_PINGPONG:
             case SILM_LOOPSYNC:
+            case SILM_GRAIN:
                 rp->feedbackMode_ = FB_ADD;
                 if (offset < 0x80) {
                     offset = FB_BUFFER_LENGTH - offset - 1;
@@ -475,19 +611,30 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
         SYS_MEMSET(buffer, 0, size * 2 * sizeof(fixed));
 
         bool hasUpdaters = !(rp->activeUpdaters_.empty());
+        if (!hasUpdaters) {
+            rp->cutoff_ = rp->baseFCut_ = fl2fp(cutoff_->GetInt() / 255.0f);
+            rp->reso_ = rp->baseFRes_ = fl2fp(reso_->GetInt() / 255.0f);
+        }
 
-        int filterMix = filterMix_->GetInt();
         FilterMode filterMode = (FilterMode)filterMode_->GetInt();
-        bool filterBoost = (filterMode == FM_SCREAM);
-        bool bassyFilter = (filterMode == FM_BASSY);
+        int ampParam = amp_ ? amp_->GetInt() : 0;
+        float ampGain = (ampParam > 0) ? (1.0f + (ampParam / 255.0f) * 7.0f) : 1.0f;
 
-        // Be sure filters are properly initialized
+        bool filtering = (filterMode != FM_OFF) ||
+                         (rp->cutoff_ < fl2fp(254.5f / 255.0f)) ||
+                         (rp->reso_ > i2fp(0));
+        FilterMode effFilterMode =
+            (filterMode == FM_OFF && filtering) ? FM_LOWPASS : filterMode;
 
-        set_filter(channel, FLT_LOWPASS, rp->cutoff_, rp->reso_, filterMix,
-                   bassyFilter);
-
-        filter_t *flt = get_filter(channel);
-        bool filtering = (rp->cutoff_ < i2fp(1)) || (rp->reso_ > i2fp(0));
+        float cutNorm = fp2fl(rp->cutoff_);
+        if (cutNorm < 0.02f) cutNorm = 0.02f;
+        if (cutNorm > 0.99f) cutNorm = 0.99f;
+        float svfF = cutNorm * cutNorm * 0.85f;
+        float resNorm = fp2fl(rp->reso_);
+        if (resNorm < 0.0f) resNorm = 0.0f;
+        if (resNorm > 1.0f) resNorm = 1.0f;
+        float svfQ = 1.0f - (resNorm * 0.92f);
+        if (svfQ < 0.08f) svfQ = 0.08f;
 
         // Process tick-level updates
 
@@ -551,9 +698,12 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 		 int downsmpl=rp->downsample_ ;
 		 unsigned int dsMask=0xFFFFFFFF<<downsmpl ;
 
-		 // Loop mode
-
+		 // Loop mode. Sliced "to end" always finishes at sample end — wrapping
+		 // from the tail back to a mid-sample slice start is a hard click train.
 		 SampleInstrumentLoopMode loopMode=(SampleInstrumentLoopMode)loopMode_->GetInt() ;
+		 if (rp->sliceToEnd_) {
+			 loopMode = SILM_ONESHOT ;
+		 }
 
 		 // Interpolation
 
@@ -598,7 +748,23 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 		if (rp->reverse_)
     {
 			fpSpeed=-rp->speed_ ; 
-		} 
+		}
+		int tsInst = timeStretch_ ? timeStretch_->GetInt() : 0x7F;
+		float tsEff = rp->tsCurrent_ + (float)tsInst - rp->tsBase_;
+		if (tsEff < 0.0f) tsEff = 0.0f;
+		if (tsEff > 254.0f) tsEff = 254.0f;
+		bool useTimeStretch = ((fabs(tsEff - 127.0f) > 0.25f) || rp->tsSpeed_ > 0.0f) &&
+		                      (loopMode != SILM_GRAIN) && (loopMode != SILM_OSC);
+		float timeRatio = 1.0f;
+		if (useTimeStretch) {
+			if (tsEff < 127.0f) {
+				float norm = tsEff / 127.0f;
+				timeRatio = 0.05f + 0.95f * norm * norm;
+			} else {
+				float norm = (tsEff - 127.0f) / 127.0f;
+				timeRatio = 1.0f + norm * (1.0f + 2.0f * norm);
+			}
+		}
 
     fixed s1,s2,t2,eta,inveta;
 		s2=0 ; t2=0 ;
@@ -610,7 +776,14 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
     {
 			lastSample=(short *)(wavbuf+rp->rendLoopEnd_*2*channelCount) ;
 		}
-        
+	// One-past-last allocated PCM frame — linear interp must not read past
+	// the buffer (use sample size, not loop end: reverse can have end < start).
+	int pcmFrames = rp->sampleSize_ > 0 ? rp->sampleSize_ : rp->rendLoopEnd_;
+	if (pcmFrames < 1) {
+		pcmFrames = 1;
+	}
+	short *waveEnd = (short *)(wavbuf + pcmFrames * 2 * channelCount);
+
     fixed zerofive=fl2fp(0.5f) ;
 
 		// Get feedback pointer position & boundary
@@ -635,20 +808,16 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 		int rpKrateCount=rp->krateCount_ ;
 		FeedbackMode rpFeedbackMode=rp->feedbackMode_ ;
 
-		fixed *fltSpeed=flt->speed ;
-		fixed *fltHeight=flt->height ;
-		fixed fltMix=flt->mix ;
-		fixed fltMixInv=FP_ONE-fltMix ;
-		fixed *fltDelay=flt->hipdelay ;
-		fixed fltParm1=flt->freq ;
-		fixed fltParm2=flt->reso ;
-		fixed fltDirt=flt->dirt ;
+		(void)f_k;
+		(void)f_s;
 
-		fixed *fltSpeedPtr=0 ;
-		fixed *fltDelayPtr=0 ;
-		fixed *fltHeightPtr=0 ;
-
-    short *dsBasePtr = ((short *)wavbuf) + rp->rendFirst_* channelCount;
+    int dsBaseFrame = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+                          ? rp->rendLoopStart_
+                          : rp->rendLoopEnd_;
+    if (dsBaseFrame < 0) {
+        dsBaseFrame = 0;
+    }
+    short *dsBasePtr = ((short *)wavbuf) + dsBaseFrame * channelCount;
        
 		while (count>0) {
 
@@ -663,6 +832,7 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
                     case SILM_LOOP:
                     case SILM_OSC:
                     case SILM_LOOPSYNC:
+                    case SILM_GRAIN:
                         input = loopPosition;
                         rpReverse = (loopPosition > lastSample);
                         if (rpReverse) {
@@ -711,6 +881,7 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
                     case SILM_LOOP:
                     case SILM_OSC:
                     case SILM_LOOPSYNC:
+                    case SILM_GRAIN:
                         input = loopPosition;
                         rpReverse = (loopPosition > lastSample);
                         if (rpReverse) {
@@ -762,6 +933,32 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 			  if (rpKrateCount--==0) {
 					rpKrateCount=KRATE_SAMPLE_COUNT ;
 
+					if (rp->tsSpeed_ > 0.0f && rp->tsCurrent_ != rp->tsTarget_) {
+						if (rp->tsCurrent_ < rp->tsTarget_) {
+							rp->tsCurrent_ += rp->tsSpeed_;
+							if (rp->tsCurrent_ >= rp->tsTarget_) {
+								rp->tsCurrent_ = rp->tsTarget_;
+								rp->tsSpeed_ = 0.0f;
+							}
+						} else {
+							rp->tsCurrent_ -= rp->tsSpeed_;
+							if (rp->tsCurrent_ <= rp->tsTarget_) {
+								rp->tsCurrent_ = rp->tsTarget_;
+								rp->tsSpeed_ = 0.0f;
+							}
+						}
+						tsEff = rp->tsCurrent_ + (float)tsInst - rp->tsBase_;
+						if (tsEff < 0.0f) tsEff = 0.0f;
+						if (tsEff > 254.0f) tsEff = 254.0f;
+						if (tsEff < 127.0f) {
+							float norm = tsEff / 127.0f;
+							timeRatio = 0.05f + 0.95f * norm * norm;
+						} else {
+							float norm = (tsEff - 127.0f) / 127.0f;
+							timeRatio = 1.0f + norm * (1.0f + 2.0f * norm);
+						}
+					}
+
 					if (hasUpdaters) {
 						doKRateUpdate(channel) ;
 						struct RUParams rup ;
@@ -783,8 +980,20 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 						rp->fbMix_=rp->baseFbMix_+rup.fbMixOffset_ ;
 						rp->fbTun_=rp->baseFbTun_+rup.fbTunOffset_ ;
 
-						set_filter(channel,FLT_LOWPASS,rp->cutoff_,rp->reso_,filterMix,bassyFilter);
-						filtering=(rp->cutoff_<i2fp(1))||(rp->reso_>i2fp(0)) ;
+						filtering = (filterMode != FM_OFF) ||
+						            (rp->cutoff_ < fl2fp(254.5f / 255.0f)) ||
+						            (rp->reso_ > i2fp(0));
+						effFilterMode =
+						    (filterMode == FM_OFF && filtering) ? FM_LOWPASS : filterMode;
+						cutNorm = fp2fl(rp->cutoff_);
+						if (cutNorm < 0.02f) cutNorm = 0.02f;
+						if (cutNorm > 0.99f) cutNorm = 0.99f;
+						svfF = cutNorm * cutNorm * 0.85f;
+						resNorm = fp2fl(rp->reso_);
+						if (resNorm < 0.0f) resNorm = 0.0f;
+						if (resNorm > 1.0f) resNorm = 1.0f;
+						svfQ = 1.0f - (resNorm * 0.92f);
+						if (svfQ < 0.08f) svfQ = 0.08f;
 
 						rp->feedbackIn_ = (feedbackIn-feedback_[channel])/2 ;
 
@@ -829,17 +1038,197 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
         }
 
         short *i2=i1+channelCount ;
+		// Clamp neighbour tap so we never read past the rendered region /
+		// PCM buffer (fast pitches can step onto the last frame with i2 OOB).
+		if (i2 >= waveEnd) {
+			i2 = waveEnd - channelCount ;
+			if (i2 < (short *)wavbuf) {
+				i2 = (short *)wavbuf ;
+			}
+		}
 
-				if (filtering) 
-        {
-					fltSpeedPtr=fltSpeed ;
-					fltHeightPtr=fltHeight ;
-					fltDelayPtr=fltDelay ;
+				float grainOutCh[2] = {0.0f, 0.0f};
+				if (loopMode == SILM_GRAIN) {
+					int gMin = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+					               ? rp->rendLoopStart_
+					               : rp->rendLoopEnd_;
+					int gMax = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+					               ? rp->rendLoopEnd_
+					               : rp->rendLoopStart_;
+					if (gMin < 0)
+						gMin = 0;
+					if (gMax > pcmFrames)
+						gMax = pcmFrames;
+					int gSpan = gMax - gMin;
+					if (gSpan < 4)
+						gSpan = 4;
+					float grainSizeFrames = (float)gSpan * 0.45f;
+					if (grainSizeFrames < 512.0f)
+						grainSizeFrames = 512.0f;
+					if (grainSizeFrames > 14000.0f)
+						grainSizeFrames = 14000.0f;
+					float stepSpd = fp2fl(rp->speed_);
+					if (stepSpd < 0.0f)
+						stepSpd = -stepSpd;
+					float phaseInc = stepSpd / grainSizeFrames;
+					if (phaseInc < 0.00004f)
+						phaseInc = 0.00004f;
+					short *pcmBase = (short *)wavbuf;
+					for (int g = 0; g < 4; g++) {
+						float ph = rp->grainPhase_[g] + phaseInc;
+						if (ph >= 1.0f) {
+							ph -= (float)floor(ph);
+							unsigned int r = rp->grainRng_;
+							r ^= r << 13;
+							r ^= r >> 17;
+							r ^= r << 5;
+							rp->grainRng_ = r;
+							float spray = ((r & 0xFFFF) / 65535.0f);
+							rp->grainPos_[g] = (float)gMin + spray * (float)(gSpan - 2);
+							bool revGrain = ((r >> 16) & 1) != 0;
+							if (g == 3) {
+								rp->grainDir_[g] = revGrain ? -1.498307f : 2.0f;
+							} else {
+								rp->grainDir_[g] = revGrain ? -1.0f : 1.0f;
+							}
+						}
+						rp->grainPhase_[g] = ph;
+						float w = 4.0f * ph * (1.0f - ph);
+						w = w * w * (3.0f - 2.0f * w);
+						if (g == 3)
+							w *= 0.45f;
+						float gpos = rp->grainPos_[g];
+						int idx0 = (int)gpos;
+						float frac = gpos - (float)idx0;
+						if (idx0 < gMin)
+							idx0 = gMin;
+						if (idx0 >= gMax - 1)
+							idx0 = gMax - 2;
+						if (idx0 < 0)
+							idx0 = 0;
+						int idx1 = idx0 + 1;
+						if (idx1 >= pcmFrames)
+							idx1 = pcmFrames - 1;
+						if (channelCount == 2) {
+							float l0 = (float)pcmBase[idx0 * 2];
+							float l1 = (float)pcmBase[idx1 * 2];
+							float r0 = (float)pcmBase[idx0 * 2 + 1];
+							float r1 = (float)pcmBase[idx1 * 2 + 1];
+							float panG = (g & 1) ? 0.65f : 0.35f;
+							grainOutCh[0] += (l0 + (l1 - l0) * frac) * w * (1.3f - panG);
+							grainOutCh[1] += (r0 + (r1 - r0) * frac) * w * (0.3f + panG);
+						} else {
+							float m0 = (float)pcmBase[idx0];
+							float m1 = (float)pcmBase[idx1];
+							grainOutCh[0] += (m0 + (m1 - m0) * frac) * w * 0.68f;
+						}
+						gpos += stepSpd * rp->grainDir_[g];
+						if (gpos >= (float)gMax)
+							gpos = (float)gMin + (gpos - (float)gMax);
+						if (gpos < (float)gMin)
+							gpos = (float)gMax - ((float)gMin - gpos);
+						rp->grainPos_[g] = gpos;
+					}
+				} else if (useTimeStretch) {
+					int sMin = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+					               ? rp->rendLoopStart_
+					               : rp->rendLoopEnd_;
+					int sMax = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+					               ? rp->rendLoopEnd_
+					               : rp->rendLoopStart_;
+					if (rp->rendFirst_ < sMin)
+						sMin = rp->rendFirst_;
+					if (rp->rendFirst_ > sMax)
+						sMax = rp->rendFirst_;
+					if (sMin < 0)
+						sMin = 0;
+					if (sMax > pcmFrames)
+						sMax = pcmFrames;
+					int sSpan = sMax - sMin;
+					if (sSpan < 4)
+						sSpan = 4;
+
+					float curMacroPos =
+					    (float)((((char *)input) - wavbuf) / (2 * channelCount)) +
+					    fp2fl(fpPos);
+					float grainLen = 1536.0f;
+					if ((float)sSpan * 0.5f < grainLen)
+						grainLen = (float)sSpan * 0.5f;
+					if (grainLen < 64.0f)
+						grainLen = 64.0f;
+
+					float pitchStep = fp2fl(rp->speed_);
+					if (pitchStep < 0.0f)
+						pitchStep = -pitchStep;
+					float signedPitchStep = rpReverse ? -pitchStep : pitchStep;
+					float phaseInc = pitchStep / grainLen;
+					if (phaseInc < 0.0001f)
+						phaseInc = 0.0001f;
+					if (phaseInc > 0.25f)
+						phaseInc = 0.25f;
+
+					float prevPh = rp->tsPhase_;
+					float ph0 = prevPh + phaseInc;
+					if (ph0 >= 1.0f) {
+						ph0 -= (float)floor(ph0);
+						rp->tsPos_[0] = curMacroPos;
+					}
+					if (prevPh < 0.5f && ph0 >= 0.5f) {
+						rp->tsPos_[1] = curMacroPos;
+					}
+					rp->tsPhase_ = ph0;
+
+					float t0 = (ph0 < 0.5f) ? (ph0 * 2.0f) : ((1.0f - ph0) * 2.0f);
+					float w0 = t0 * t0 * (3.0f - 2.0f * t0);
+					float weights[2] = {w0, 1.0f - w0};
+					short *pcmBase = (short *)wavbuf;
+
+					for (int g = 0; g < 2; g++) {
+						float gpos = rp->tsPos_[g];
+						if (gpos >= (float)sMax) {
+							gpos = (loopMode == SILM_ONESHOT)
+							           ? (float)(sMax - 1)
+							           : ((float)sMin + (gpos - (float)sMax));
+						}
+						if (gpos < (float)sMin) {
+							gpos = (loopMode == SILM_ONESHOT)
+							           ? (float)sMin
+							           : ((float)sMax - ((float)sMin - gpos));
+						}
+						int idx0 = (int)gpos;
+						float frac = gpos - (float)idx0;
+						if (idx0 < sMin)
+							idx0 = sMin;
+						if (idx0 >= sMax - 1)
+							idx0 = sMax - 2;
+						if (idx0 < 0)
+							idx0 = 0;
+						int idx1 = idx0 + 1;
+						if (idx1 >= pcmFrames)
+							idx1 = pcmFrames - 1;
+						float wg = weights[g];
+						if (channelCount == 2) {
+							float l0 = (float)pcmBase[idx0 * 2];
+							float l1 = (float)pcmBase[idx1 * 2];
+							float r0 = (float)pcmBase[idx0 * 2 + 1];
+							float r1 = (float)pcmBase[idx1 * 2 + 1];
+							grainOutCh[0] += (l0 + (l1 - l0) * frac) * wg;
+							grainOutCh[1] += (r0 + (r1 - r0) * frac) * wg;
+						} else {
+							float m0 = (float)pcmBase[idx0];
+							float m1 = (float)pcmBase[idx1];
+							grainOutCh[0] += (m0 + (m1 - m0) * frac) * wg;
+						}
+						rp->tsPos_[g] = gpos + signedPitchStep;
+					}
 				}
 
 				for (int i=0;i<channelCount;i++) 
         {
 					t2=s2 ; // move L to R if necessary
+					if (loopMode == SILM_GRAIN || useTimeStretch) {
+						s1 = fl2fp(grainOutCh[i]);
+					} else {
 					s1=i2fp(*i1++) ;
           s2=i2fp(*i2++) ;
 
@@ -866,6 +1255,7 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 								s1=s2 ;
 							} ;
 							break ;
+					}
 					}
 
 				// apply feedback mix
@@ -903,41 +1293,54 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 
 					s2=(s2&mask);
 
+				// apply AMP gain + soft clip
+					if (ampParam > 0) {
+						float x = (fp2fl(s2) / 32768.0f) * ampGain;
+						if (x > 1.0f || x < -1.0f) {
+							x = x / (1.0f + 0.35f * (float)fabs(x));
+							if (x > 1.0f) x = 1.0f;
+							if (x < -1.0f) x = -1.0f;
+						}
+						s2 = fl2fp(x * 32768.0f);
+					}
+
 				// apply volume
 
           s2=fp_mul(s2,volfactor) ;
 
-				// apply filtering if needed
+				// apply SHAPES-style 5-mode Chamberlin SVF filter if enabled
 
-					if (filtering) {
+					if (effFilterMode != FM_OFF) {
+						float inNorm = fp2fl(s2) / 32768.0f;
+						float hp = inNorm - rp->svfLp_[i] - svfQ * rp->svfBp_[i];
+						rp->svfBp_[i] += svfF * hp;
+						rp->svfLp_[i] += svfF * rp->svfBp_[i];
 
-						fixed lpin =fp_mul(s2,fltMixInv) ;
-      			fixed hpin = -fp_mul(s2,fltMix) ;
-							
-    				fixed difr = fp_sub(lpin,*fltHeightPtr);
+						if (rp->svfBp_[i] > 4.0f) rp->svfBp_[i] = 4.0f;
+						if (rp->svfBp_[i] < -4.0f) rp->svfBp_[i] = -4.0f;
+						if (rp->svfLp_[i] > 4.0f) rp->svfLp_[i] = 4.0f;
+						if (rp->svfLp_[i] < -4.0f) rp->svfLp_[i] = -4.0f;
 
-						// Introduce non-linearity if screamin'
-
-						if (filterBoost) {
-							if (*fltSpeedPtr<-FP_ONE) {
-								*fltSpeedPtr=-f_s ;
-							} else if (fltSpeed[i]>FP_ONE) {
-								*fltSpeedPtr=f_s ;
-							};
-							*fltSpeedPtr=fp_mul(*fltSpeedPtr,fltDirt) ;
+						float outNorm = inNorm;
+						switch (effFilterMode) {
+						case FM_LOWPASS:
+							outNorm = rp->svfLp_[i];
+							break;
+						case FM_HIGHPASS:
+							outNorm = hp;
+							break;
+						case FM_BANDPASS:
+							outNorm = rp->svfBp_[i];
+							break;
+						case FM_LPHP:
+							outNorm = (rp->svfLp_[i] + hp) * 0.7f;
+							break;
+						default:
+							break;
 						}
-
-						*fltSpeedPtr = fp_mul(*fltSpeedPtr,fltParm2);		//mul by res, it's some kind of inertia. caution to feedback
-/*HOG:5*/				*fltSpeedPtr = fp_add(*fltSpeedPtr,fp_mul(difr,fltParm1)); //mul by cutoff, less cutoff = no sound, so it's better not be 0.
-
-						*fltHeightPtr += *fltSpeedPtr ;
-						*fltHeightPtr += *fltDelayPtr-hpin ;
-						s2=*fltHeightPtr ;
-
-						*fltDelayPtr=hpin ;
-						fltDelayPtr++ ;
-						fltHeightPtr++ ;
-						fltSpeedPtr++ ;
+						if (outNorm > 1.25f) outNorm = 1.25f;
+						if (outNorm < -1.25f) outNorm = -1.25f;
+						s2 = fl2fp(outNorm * 32768.0f);
 					}
 					// apply attenuation
 					s2=fp_mul(s2,fpattenuate) ;
@@ -969,8 +1372,8 @@ bool SampleInstrument::Render(int channel, fixed *buffer, int size, int flags) {
 
 			// Computes new pos for next input sample
 			// fpPos is always relative to 'input' pointer
-		
-			   fpPos=fp_add(fpPos,fpSpeed) ;
+			   fixed fpStep = useTimeStretch ? fp_mul(fpSpeed, fl2fp(timeRatio)) : fpSpeed;
+			   fpPos=fp_add(fpPos,fpStep) ;
          int delta=fp2i(fpPos) ;
          input+=channelCount*delta;
          fpPos = fp_sub(fpPos,i2fp(delta)) ;
@@ -1065,13 +1468,12 @@ void SampleInstrument::Update(Observable &o,I_ObservableData *d)
 	switch(id) {
 		case SIP_SAMPLE:	
 		{
-			if (running_) {
-				dirty_=true ; // we'll update later, when instrument gets re-triggered
-			} else {
-				updateInstrumentData(true) ;
-				SetChanged() ;
-				NotifyObservers();
-			} ;
+			for (int i = 0; i < SONG_CHANNEL_COUNT; i++) {
+				renderParams_[i].finished_ = true;
+			}
+			updateInstrumentData(true) ;
+			SetChanged() ;
+			NotifyObservers();
 		}
 			break ;
 
@@ -1424,6 +1826,132 @@ void SampleInstrument::ProcessCommand(int channel,FourCC cc,ushort value) {
 				if (drive >0 ) rp->drive_=drive ;
 				if (crush >0 ) rp->crush_=crush ;
 			}
+			break ;
+		case I_CMD_RVRS:
+			{
+				if (!source_ || rp->sampleSize_ < 1) {
+					break;
+				}
+				unsigned char mode = (unsigned char)(value & 0xFF);
+				unsigned char posShift = (unsigned char)(value >> 8);
+				bool wantRev = (mode == 0)   ? (!rp->reverse_)
+				               : (mode == 2) ? false
+				                             : true;
+
+				bool atNoteStart =
+				    (fabs(rp->position_ - float(rp->rendFirst_)) < 1.0f);
+
+				int lowBound = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+				                   ? rp->rendLoopStart_
+				                   : rp->rendLoopEnd_;
+				int highBound = (rp->rendLoopStart_ < rp->rendLoopEnd_)
+				                    ? rp->rendLoopEnd_
+				                    : (rp->rendLoopStart_ + 1);
+
+				int nSlices = slices_->GetInt();
+				if (atNoteStart && nSlices > 1 &&
+				    rp->midiNote_ < nSlices) {
+					int domainStart = start_->GetInt();
+					if (domainStart < 0 || domainStart >= rp->sampleSize_) {
+						domainStart = 0;
+					}
+					int domainEnd = loopEnd_->GetInt();
+					if (domainEnd > rp->sampleSize_ ||
+					    domainEnd <= domainStart) {
+						domainEnd = rp->sampleSize_;
+					}
+					int domainLen = domainEnd - domainStart;
+					if (domainLen < 1) {
+						domainLen = 1;
+					}
+					int slice = domainLen / nSlices;
+					if (slice < 1) {
+						slice = 1;
+					}
+					int sliceStart = domainStart + rp->midiNote_ * slice;
+					int sliceEnd =
+					    domainStart + (rp->midiNote_ + 1) * slice;
+					if (sliceEnd > domainEnd) {
+						sliceEnd = domainEnd;
+					}
+					if (sliceToEnd_->GetInt()) {
+						rp->sliceToEnd_ = true;
+						if (wantRev) {
+							lowBound = domainStart;
+							highBound = sliceEnd;
+						} else {
+							lowBound = sliceStart;
+							highBound = domainEnd;
+						}
+					} else {
+						lowBound = sliceStart;
+						highBound = sliceEnd;
+					}
+				}
+
+				if (lowBound < 0) {
+					lowBound = 0;
+				}
+				if (highBound > rp->sampleSize_ || highBound <= lowBound) {
+					highBound = rp->sampleSize_;
+				}
+
+				if (wantRev) {
+					rp->rendLoopStart_ = (highBound > lowBound + 1)
+					                         ? (highBound - 1)
+					                         : lowBound;
+					rp->rendLoopEnd_ = lowBound;
+					rp->reverse_ = true;
+				} else {
+					rp->rendLoopStart_ = lowBound;
+					rp->rendLoopEnd_ = highBound;
+					rp->reverse_ = false;
+				}
+
+				if (posShift != 0) {
+					rp->position_ =
+					    float(lowBound) +
+					    (float(highBound - lowBound) * float(posShift)) /
+					        256.0f;
+					rp->finished_ = false;
+				} else if (atNoteStart || rp->finished_) {
+					rp->rendFirst_ = rp->rendLoopStart_;
+					rp->position_ = float(rp->rendFirst_);
+					rp->finished_ = false;
+				} else {
+					if (rp->position_ < float(lowBound)) {
+						rp->position_ = float(lowBound);
+					} else if (rp->position_ >= float(highBound)) {
+						rp->position_ = float(
+						    (highBound > lowBound + 1) ? (highBound - 1)
+						                               : lowBound);
+					}
+				}
+				rp->couldClick_ = SHOULD_KILL_CLICKS;
+			}
+			break ;
+		case I_CMD_TSTR:
+			{
+				float target = float(value & 0xFF);
+				if (target > 254.0f)
+					target = 254.0f;
+				float speedTicks = float(value >> 8);
+				if (speedTicks <= 0.0f) {
+					rp->tsCurrent_ = target;
+					rp->tsTarget_ = target;
+					rp->tsSpeed_ = 0.0f;
+				} else {
+					int sampleCount = int(4 * SyncMaster::GetInstance()->GetTickSampleCount());
+					if (sampleCount < 1)
+						sampleCount = 1;
+					rp->tsTarget_ = target;
+					rp->tsSpeed_ = fabs(target - rp->tsCurrent_) * float(KRATE_SAMPLE_COUNT) /
+					               (speedTicks * float(sampleCount));
+					if (rp->tsSpeed_ < 0.0001f)
+						rp->tsSpeed_ = 0.0001f;
+				}
+			}
+			break ;
 		default:
 			break;
 	} ;
@@ -1444,6 +1972,9 @@ const char *SampleInstrument::GetFileName() {
 * Intended for printing where the whole name doesn't fit on screen
 */
 const char *SampleInstrument::GetName() {
+    if (userName_[0] != '\0') {
+        return userName_;
+    }
     Variable *v = FindVariable(SIP_SAMPLE);
     const char *src = v->GetString();
 
@@ -1458,7 +1989,20 @@ const char *SampleInstrument::GetName() {
     return src;
 }
 
+unsigned char SampleInstrument::GetDelaySend() {
+    return delSend_ ? (unsigned char)delSend_->GetInt() : 0;
+}
+
+unsigned char SampleInstrument::GetReverbSend() {
+    return revSend_ ? (unsigned char)revSend_->GetInt() : 0;
+}
+
+unsigned char SampleInstrument::GetTapeSend() {
+    return tapeSend_ ? (unsigned char)tapeSend_->GetInt() : 0;
+}
+
 void SampleInstrument::Purge() {
+	userName_[0] = '\0';
 	IteratorPtr<Variable> it(GetIterator()) ;
 	for (it->Begin();!it->IsDone();it->Next()) {
 		Variable &v=it->CurrentItem() ;
