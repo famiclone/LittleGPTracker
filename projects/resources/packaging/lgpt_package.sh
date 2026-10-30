@@ -26,7 +26,7 @@ collect_resources() { #1PLATFORM #2lgpt.*-exe
     zip -9 $PACKAGE -j $CONTENTS
   elif [ "$1" == "MACOS" ]; then # .app is a folder
     zip -9 $PACKAGE -j $CONTENTS
-    zip -9yr $PACKAGE LittleGPTracker.app/
+    zip -9yr $PACKAGE SwineTracker.app/
   else # all the others go in the bin
     mkdir bin ; cp $CONTENTS bin
     zip -9 $PACKAGE bin/* && rm -r bin/
@@ -36,7 +36,7 @@ collect_resources() { #1PLATFORM #2lgpt.*-exe
   CONTENTS+=" $(find . -name "samplelib" -type d)"
   CONTENTS+=" $(find . -name "lgpt_*" -type d)"
   zip -9 -r ../../$PACKAGE $CONTENTS
-  CONTENTS="../../../docs/wiki/What-is-LittlePiggyTracker.md"
+  CONTENTS="../../../docs/wiki/What-is-SwineTracker.md"
   CONTENTS+=" ../../../docs/wiki/config_xml.md"
   CONTENTS+=" ../../../docs/wiki/tips_and_tricks.md"
   CONTENTS+=" ../$1/*.txt"
@@ -54,6 +54,6 @@ collect_resources CHIP lgpt.chip-exe
 collect_resources BITTBOY lgpt-bittboy.elf
 collect_resources GARLICPLUS lgpt-garlicplus.elf
 collect_resources RG35XXPLUS lgpt-rg35xxplus.elf
-collect_resources MACOS LittleGPTracker.app
+collect_resources MACOS SwineTracker.app
 # collect_resources RS97 lgpt.dge
 # collect_resources STEAM lgpt.steam-exe

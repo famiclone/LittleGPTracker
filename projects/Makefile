@@ -17,7 +17,7 @@ include $(PROJECTDIR)/Makefile.$(PLATFORM)
 
 AUTHOR	:=	n0s
 TITLE	:=	lgpt
-NAME    :=  LittleGPTracker
+NAME    :=  SwineTracker
 ICON    :=  lgpt_icon.bmp
 
 #---------------------------------------------------------------------------------

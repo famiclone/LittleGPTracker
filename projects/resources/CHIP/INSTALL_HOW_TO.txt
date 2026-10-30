@@ -17,7 +17,7 @@ pocket-home icon:
 add lgpt-pockethip.png to /usr/share/pocket-home/appIcons/
     Replace one of "items" under /usr/share/pocket-home/config.json
         {
-          "name": "Little Piggy Tracker",
+          "name": "Swine Tracker",
           "icon": "/home/chip/Documents/LGPT/lgpt-pocketchip.png",
           "shell": "/home/chip/lgpt.sh"
          },
